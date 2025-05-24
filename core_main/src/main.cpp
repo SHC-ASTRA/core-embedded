@@ -67,6 +67,7 @@ unsigned long clockTimer = 0;
 unsigned long lastFeedback = 0;
 unsigned long lastCtrlCmd = 0;
 unsigned long lastVoltRead = 0;
+long lastTurn = 0;
 
 
 //--------------//
@@ -86,7 +87,11 @@ void setLED(int r_val, int b_val, int g_val);
 //  Misc  //
 //--------//
 
-String feedback;
+struct TurningToStatus {
+    bool enabled = false;
+    int targetHeading = 0;
+    long timeoutStamp = 0;
+} turningToStatus;
 
 
 //------------------------------------------------------------------------------------------------//
@@ -248,6 +253,32 @@ void loop() {
     }
 #endif
 
+    if (millis() - lastTurn > 100 && turningToStatus.enabled) {
+        lastTurn = millis();
+
+        if (millis() > turningToStatus.timeoutStamp) {
+            turningToStatus.enabled = false;
+            COMMS_UART.println("ctrl,0,0");
+        }
+
+        // Get heading measurement from IMU
+        sensors_event_t orientationData;
+        bno.getEvent(&orientationData, Adafruit_BNO055::VECTOR_EULER);
+        int currentHeading = orientationData.orientation.x;
+
+        // Make LSS rotate towards the required heading
+        int error = turningToStatus.targetHeading - currentHeading;
+
+        if (abs(error) < 2) {
+            turningToStatus.enabled = false;
+            COMMS_UART.println("ctrl,0,0");
+        } else if (error > 0) {
+            COMMS_UART.println("auto,TurnCW");
+        } else {
+            COMMS_UART.println("auto,TurnCCW");
+        }
+    }
+
     if((millis()-lastFeedback)>=2000)
     {
         lastFeedback = millis();
@@ -343,6 +374,16 @@ void loop() {
                 COMMS_UART.print(canData[0]);
                 COMMS_UART.print(",");
                 COMMS_UART.println(canData[1]);
+            }
+        }
+
+        // Submodule-specific
+
+        else if (commandID == 41) {  // turn to
+            if (canData.size() == 2) {
+                turningToStatus.enabled = true;
+                turningToStatus.targetHeading = canData[0];
+                turningToStatus.timeoutStamp = millis() + canData[1];
             }
         }
     }
