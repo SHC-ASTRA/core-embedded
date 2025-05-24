@@ -401,7 +401,7 @@ void loop() {
             vicCAN.relayFromSerial(args);
         }
 
-        else if (args[0] == "can_relay_mode") {
+        else if (args[0] == "can_relay_mode" && args.size() == 2) {
             if (args[1] == "on") {
                 vicCAN.relayOn();
             } else if (args[1] == "off") {
