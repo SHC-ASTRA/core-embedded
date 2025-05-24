@@ -299,16 +299,7 @@ void loop() {
         vicCAN.parseData(canData);
 
         Serial.print("VicCAN: ");
-        Serial.print(commandID);
-        Serial.print("; ");
-        if (canData.size() > 0) {
-            for (const double& data : canData) {
-                Serial.print(data);
-                Serial.print(", ");
-            }
-        }
-        Serial.println();
-
+        vicCAN.printFrame(&Serial);
 
         // Misc
 
