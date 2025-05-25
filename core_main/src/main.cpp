@@ -144,20 +144,20 @@ void setup() {
     //  Sensors  //
     //-----------//
 
-    if(!bno.begin()) 
-        Serial.println("!BNO failed to start...");
+    if(!bno.begin())
+        Serial.println("BNO 055 failed");
     else 
-        Serial.println("BNO055 Started Successfully");
+        Serial.println("BNO 055 started successfully");
 
-    if(!bmp.begin_I2C()) 
-        Serial.println("bmp not working");
+    if(!bmp.begin_I2C())
+        Serial.println("BMP 388 failed");
     else 
-        Serial.println("bmp is working");
+        Serial.println("BMP 388 started successfully");
 
-    if(!myGNSS.begin()) 
-        Serial.println("GPS not working");
+    if(!myGNSS.begin())
+        Serial.println("M9N GPS failed");
     else 
-        Serial.println("GPS is working");
+        Serial.println("M9N GPS started successfully");
 
     initializeBMP(bmp);
 
@@ -405,6 +405,7 @@ void loop() {
     //      /////////    //            //    //////////      //
     //                                                       //
     //-------------------------------------------------------//
+    try {
     if (Serial.available()) {
         String input = Serial.readStringUntil('\n');
 
@@ -583,11 +584,15 @@ void loop() {
         {
             for(int i = 0; i < 3; i++)
             {
-                led_rbg[i] = args[i+1].toInt();
+                led_rbg[i] = args.at(i+1).toInt();
             }
             
             setLED(led_rbg[0], led_rbg[1], led_rbg[2]);
         }
+    }
+    } catch(std::out_of_range& e) {
+        Serial.println("Error: Out of range (not enough arguments provided)");
+        Serial.println(e.what());
     }
 
     // Relay data from the motor controller back over USB
