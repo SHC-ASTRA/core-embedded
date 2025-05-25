@@ -89,8 +89,8 @@ void setLED(int r_val, int b_val, int g_val);
 
 struct TurningToStatus {
     bool enabled = false;
-    int targetHeading = 0;
-    long timeoutStamp = 0;
+    int targetHeading = 0;  // Degrees
+    long timeoutStamp = 0;  // Seconds
 } turningToStatus;
 
 
@@ -383,7 +383,7 @@ void loop() {
             if (canData.size() == 2) {
                 turningToStatus.enabled = true;
                 turningToStatus.targetHeading = canData[0];
-                turningToStatus.timeoutStamp = millis() + canData[1];
+                turningToStatus.timeoutStamp = millis() + canData[1] * 1000;
             }
         }
     }
