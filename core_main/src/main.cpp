@@ -380,7 +380,7 @@ void loop() {
         // Submodule-specific
 
         else if (commandID == 41) {  // turn to
-            if (canData.size() == 2) {
+            if (canData.size() == 2 && canData[1] != 0) {
                 turningToStatus.enabled = true;
                 turningToStatus.targetHeading = canData[0];
                 turningToStatus.timeoutStamp = millis() + canData[1] * 1000;
