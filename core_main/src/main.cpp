@@ -308,7 +308,7 @@ void loop() {
         vicCAN.send(CMD_DATA_IMU_ACCEL_HEADING, bnoData2[3], bnoData2[4], bnoData2[5], bnoData2[6]);
 
         // BMP (Humidity, altitude, pressure) Data
-        vicCAN.send(CMD_DATA_BMP, bmp.readTemperature(), bmp.readAltitude(SEALEVELPRESSURE_HPA), bmp.readPressure() / 100.0);
+        vicCAN.send(CMD_DATA_BMP, bmp.readTemperature(), bmp.readAltitude(SEALEVELPRESSURE_HPA), bmp.readPressure() * 10.0);
     }
 
     if (millis() - lastVoltRead > 1000) {
