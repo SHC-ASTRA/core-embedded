@@ -362,9 +362,9 @@ void loop() {
             if (canData.size() == 1) {
                 lastCtrlCmd = millis();
                 if (canData[0] == 0)
-                    COMMS_UART.println("brake,on");
-                else if (canData[0] == 1)
                     COMMS_UART.println("brake,off");
+                else if (canData[0] == 1)
+                    COMMS_UART.println("brake,on");
             }
         }
         else if (commandID == CMD_REV_SET_DUTY) {
