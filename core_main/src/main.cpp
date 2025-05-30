@@ -295,8 +295,10 @@ void loop() {
         pullBNOData(bno, bnoData2);
         gpsAltitude = myGNSS.getAltitude() / 1000.0;
 
-        uint8_t bnoCalibration = 0;
-        bno.getCalibration(&bnoCalibration, nullptr, nullptr, nullptr);
+        // Calibration status
+        uint8_t system, gyro, accel, mag = 0;
+        bno.getCalibration(&system, &gyro, &accel, &mag);
+        int calibStatus = system * 1000 + gyro * 100 + accel * 10 + mag;
 
         // M9N (GNSS) Data
         vicCAN.send(CMD_GNSS_LAT, gpsData[0]);
@@ -304,7 +306,7 @@ void loop() {
         vicCAN.send(CMD_GNSS_SAT, gpsData[2], gpsAltitude);  // SAT command now includes altitude
 
         // BNO (IMU) Data
-        vicCAN.send(CMD_DATA_IMU_GYRO, bnoData2[0], bnoData2[1], bnoData2[2], bnoCalibration);
+        vicCAN.send(CMD_DATA_IMU_GYRO, bnoData2[0], bnoData2[1], bnoData2[2], calibStatus);
         vicCAN.send(CMD_DATA_IMU_ACCEL_HEADING, bnoData2[3], bnoData2[4], bnoData2[5], bnoData2[6]);
 
         // BMP (Humidity, altitude, pressure) Data
