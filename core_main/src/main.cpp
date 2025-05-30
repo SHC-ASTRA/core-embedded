@@ -591,6 +591,10 @@ void loop() {
             
             setLED(led_rbg[0], led_rbg[1], led_rbg[2]);
         }
+
+        else if (args[0] == "drivemeters" && args.size() == 2) {
+            COMMS_UART.println(input);
+        }
     }
     } catch(std::out_of_range& e) {
         Serial.println("Error: Out of range (not enough arguments provided)");
