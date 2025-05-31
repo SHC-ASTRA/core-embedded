@@ -80,7 +80,7 @@ String outputBno();
 String outputBmp();
 String outputGPS();
 void setLED(int r_val, int b_val, int g_val);
-
+float clamp_angle(float angle);
 
 
 //--------//
@@ -259,23 +259,25 @@ void loop() {
         if (millis() > turningToStatus.timeoutStamp) {
             turningToStatus.enabled = false;
             COMMS_UART.println("ctrl,0,0");
-        }
-
-        // Get heading measurement from IMU
-        sensors_event_t orientationData;
-        bno.getEvent(&orientationData, Adafruit_BNO055::VECTOR_EULER);
-        int currentHeading = orientationData.orientation.x;
-
-        // Make LSS rotate towards the required heading
-        int error = turningToStatus.targetHeading - currentHeading;
-
-        if (abs(error) < 2) {
-            turningToStatus.enabled = false;
-            COMMS_UART.println("ctrl,0,0");
-        } else if (error > 0) {
-            COMMS_UART.println("auto,TurnCW");
         } else {
-            COMMS_UART.println("auto,TurnCCW");
+            // Get heading measurement from IMU
+            sensors_event_t orientationData;
+            bno.getEvent(&orientationData, Adafruit_BNO055::VECTOR_EULER);
+            int currentHeading = orientationData.orientation.x;
+            currentHeading = clamp_angle(currentHeading);
+            turningToStatus.targetHeading = clamp_angle(turningToStatus.targetHeading);
+
+            // Make LSS rotate towards the required heading
+            int error = turningToStatus.targetHeading - currentHeading;
+
+            if (abs(error) < 10) {
+                turningToStatus.enabled = false;
+                COMMS_UART.println("ctrl,0,0");
+            } else if (error > 0) {
+                COMMS_UART.println("ctrl,0.75,-0.75");
+            } else {
+                COMMS_UART.println("ctrl,-0.75,0.75");
+            }
         }
     }
 
@@ -318,7 +320,7 @@ void loop() {
         float vBatt = convertADC(analogRead(PIN_VDIV_BATT), 10, 2.21);
         float v12 = convertADC(analogRead(PIN_VDIV_12V), 10, 3.32);
         float v5 = convertADC(analogRead(PIN_VDIV_5V), 10, 10);
-        float v33 = convertADC(analogRead(PIN_VDIV_3V3), 10, 1.1);
+        float v33 = convertADC(analogRead(PIN_VDIV_3V3), 10, 10);
 
         vicCAN.send(CMD_POWER_VOLTAGE, vBatt * 100, v12 * 100, v5 * 100, v33 * 100);
     }
@@ -612,7 +614,10 @@ void loop() {
         std::vector<String> args = {};  // Initialize empty vector to hold separated arguments
         parseInput(input, args);   // Separate `input` by commas and place into args vector
 
-        Serial.println(input);
+        if (args[0] != "motorstatus") {
+            Serial.print("Motor MCU: ");
+            Serial.println(input);
+        }
 
         if (checkArgs(args, 4) && args[0] == "motorstatus") {
             vicCAN.send(CMD_REVMOTOR_FEEDBACK, args[1].toInt(), args[2].toInt(), args[3].toInt(), args[4].toInt());
@@ -770,4 +775,15 @@ void setLED(int r_val, int b_val, int g_val)
         FastLED.show();
         //delay(10);
     }
+}
+
+float clamp_angle(float angle) {
+    angle = fmod(angle, 360.0);
+    if (angle < 0) {
+        angle += 360;
+    }
+    if (angle > 180) {
+        angle -= 360;
+    }
+    return angle;
 }

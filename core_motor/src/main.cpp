@@ -460,20 +460,20 @@ void loop() {
 // Should only be used for autonomy
 void turnCW()
 {
-    float speed = 0.6;
+    float speed = 0.1;
     motorList[0]->sendDuty(speed);
     motorList[1]->sendDuty(speed);
-    motorList[2]->sendDuty(-1 * speed);
-    motorList[3]->sendDuty(-1 * speed);
+    motorList[2]->sendDuty(speed);
+    motorList[3]->sendDuty(speed);
 }
 
 // Bypasses the acceleration to make the rover turn counterclockwise
 // Should only be used for autonomy
 void turnCCW()
 {
-    float speed = 0.6;
-    motorList[0]->sendDuty(-1 * speed);
-    motorList[1]->sendDuty(-1 * speed);
+    float speed = -0.1;
+    motorList[0]->sendDuty(speed);
+    motorList[1]->sendDuty(speed);
     motorList[2]->sendDuty(speed);
     motorList[3]->sendDuty(speed);
 }
