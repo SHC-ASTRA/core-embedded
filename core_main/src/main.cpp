@@ -595,6 +595,7 @@ void loop() {
         }
 
         else if (args[0] == "drivemeters" && args.size() == 2) {
+            lastCtrlCmd = millis();
             COMMS_UART.println(input);
         }
     }
@@ -615,6 +616,10 @@ void loop() {
 
         if (checkArgs(args, 4) && args[0] == "motorstatus") {
             vicCAN.send(CMD_REVMOTOR_FEEDBACK, args[1].toInt(), args[2].toInt(), args[3].toInt(), args[4].toInt());
+        }
+
+        else if (args[0] == "can_relay_fromvic") {
+            Serial.println(input);
         }
     }
 }

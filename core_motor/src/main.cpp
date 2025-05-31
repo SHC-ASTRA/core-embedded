@@ -33,13 +33,15 @@
 #    define COMMS_UART Serial1  // UART between Main-Motor
 #endif
 
-// Testbed: 0.6168
 // Clucky: 1.11715
 #define WHEEL_CIRCUMFERENCE 1.11715
+// Testbed: 0.6168
+#define WHEEL_CIRCUMFERENCE 0.6168
 
-// Testbed: 64
 // Clucky: 100
 #define WHEEL_GEARBOX 100
+// Testbed: 64
+#define WHEEL_GEARBOX 64
 
 
 //---------------------//
@@ -398,12 +400,12 @@ void loop() {
             // If all of the motors are turning, then ignore and stave off safety timeout.
             // If some but not all motors are turning, then stop and re-start drivemeters.
             bool allRotating = true;
-            bool oneRotating = false;
+            bool anyRotating = false;
             for (int i = 0; i < 4; i++) {
                 if (!motorList[i]->isRotToPos()) {
                     allRotating = false;
                 } else {
-                    oneRotating = true;
+                    anyRotating = true;
                 }
             }
 
@@ -411,7 +413,7 @@ void loop() {
                 COMMS_UART.println("All motors rotating, ignoring drivemeters command");
                 lastCtrlCmd = millis();
                 return;
-            } else if (oneRotating) {
+            } else if (anyRotating) {
                 // Let the loop do its thing if some but not all motors are rotating
                 COMMS_UART.println("Some motors rotating");
                 return;
@@ -517,8 +519,8 @@ void driveMeters(float meters) {
     Motor1.turnByDeg(degrees);
     Motor2.turnByDeg(degrees);
     // Right motors
-    Motor3.turnByDeg(-1 * degrees);
-    Motor4.turnByDeg(-1 * degrees);
+    Motor3.turnByDeg(degrees);
+    Motor4.turnByDeg(degrees);
 }
 
 float getDriveSpeed() {
