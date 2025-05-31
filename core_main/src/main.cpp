@@ -768,6 +768,6 @@ void setLED(int r_val, int b_val, int g_val)
     {
         leds[i] = CRGB(r_val, b_val, g_val);
         FastLED.show();
-        delay(10);
+        //delay(10);
     }
 }
