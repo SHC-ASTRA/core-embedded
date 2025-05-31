@@ -460,7 +460,7 @@ void loop() {
 // Should only be used for autonomy
 void turnCW()
 {
-    float speed = 0.1;
+    float speed = 0.75;
     motorList[0]->sendDuty(speed);
     motorList[1]->sendDuty(speed);
     motorList[2]->sendDuty(speed);
@@ -471,7 +471,7 @@ void turnCW()
 // Should only be used for autonomy
 void turnCCW()
 {
-    float speed = -0.1;
+    float speed = 0.75 * -1;
     motorList[0]->sendDuty(speed);
     motorList[1]->sendDuty(speed);
     motorList[2]->sendDuty(speed);
