@@ -31,7 +31,6 @@
 #    define MOTOR_ID_FR 1  // REV motor ID for front right wheel
 #    define MOTOR_ID_BL 4  // REV motor ID for back left wheel
 #    define MOTOR_ID_BR 3  // REV motor ID for back right wheel
-
 #    define MOTOR_AMOUNT 4
 
 
