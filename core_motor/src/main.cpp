@@ -36,12 +36,12 @@
 // Clucky: 1.11715
 #define WHEEL_CIRCUMFERENCE 1.11715
 // Testbed: 0.6168
-#define WHEEL_CIRCUMFERENCE 0.6168
+// #define WHEEL_CIRCUMFERENCE 0.6168
 
 // Clucky: 100
 #define WHEEL_GEARBOX 100
 // Testbed: 64
-#define WHEEL_GEARBOX 64
+// #define WHEEL_GEARBOX 64
 
 
 //---------------------//
