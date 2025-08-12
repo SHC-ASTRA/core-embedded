@@ -67,6 +67,7 @@ unsigned long clockTimer = 0;
 unsigned long lastFeedback = 0;
 unsigned long lastCtrlCmd = 0;
 unsigned long lastVoltRead = 0;
+long lastTurn = 0;
 
 
 //--------------//
@@ -79,14 +80,18 @@ String outputBno();
 String outputBmp();
 String outputGPS();
 void setLED(int r_val, int b_val, int g_val);
-
+float clamp_angle(float angle);
 
 
 //--------//
 //  Misc  //
 //--------//
 
-String feedback;
+struct TurningToStatus {
+    bool enabled = false;
+    int targetHeading = 0;  // Degrees
+    long timeoutStamp = 0;  // Seconds
+} turningToStatus;
 
 
 //------------------------------------------------------------------------------------------------//
@@ -139,20 +144,20 @@ void setup() {
     //  Sensors  //
     //-----------//
 
-    if(!bno.begin()) 
-        Serial.println("!BNO failed to start...");
+    if(!bno.begin())
+        Serial.println("BNO 055 failed");
     else 
-        Serial.println("BNO055 Started Successfully");
+        Serial.println("BNO 055 started successfully");
 
-    if(!bmp.begin_I2C()) 
-        Serial.println("bmp not working");
+    if(!bmp.begin_I2C())
+        Serial.println("BMP 388 failed");
     else 
-        Serial.println("bmp is working");
+        Serial.println("BMP 388 started successfully");
 
-    if(!myGNSS.begin()) 
-        Serial.println("GPS not working");
+    if(!myGNSS.begin())
+        Serial.println("M9N GPS failed");
     else 
-        Serial.println("GPS is working");
+        Serial.println("M9N GPS started successfully");
 
     initializeBMP(bmp);
 
@@ -248,6 +253,34 @@ void loop() {
     }
 #endif
 
+    if (millis() - lastTurn > 100 && turningToStatus.enabled) {
+        lastTurn = millis();
+
+        if (millis() > turningToStatus.timeoutStamp) {
+            turningToStatus.enabled = false;
+            COMMS_UART.println("ctrl,0,0");
+        } else {
+            // Get heading measurement from IMU
+            sensors_event_t orientationData;
+            bno.getEvent(&orientationData, Adafruit_BNO055::VECTOR_EULER);
+            int currentHeading = orientationData.orientation.x;
+            currentHeading = clamp_angle(currentHeading);
+            turningToStatus.targetHeading = clamp_angle(turningToStatus.targetHeading);
+
+            // Make LSS rotate towards the required heading
+            int error = turningToStatus.targetHeading - currentHeading;
+
+            if (abs(error) < 10) {
+                turningToStatus.enabled = false;
+                COMMS_UART.println("ctrl,0,0");
+            } else if (error > 0) {
+                COMMS_UART.println("ctrl,0.75,-0.75");
+            } else {
+                COMMS_UART.println("ctrl,-0.75,0.75");
+            }
+        }
+    }
+
     if((millis()-lastFeedback)>=2000)
     {
         lastFeedback = millis();
@@ -258,21 +291,28 @@ void loop() {
 
         double gpsData[3];
         float bnoData2[7];
+        float gpsAltitude = 0.0;
 
         getPosition(myGNSS, gpsData);
         pullBNOData(bno, bnoData2);
+        gpsAltitude = myGNSS.getAltitude() / 1000.0;
+
+        // Calibration status
+        uint8_t system, gyro, accel, mag = 0;
+        bno.getCalibration(&system, &gyro, &accel, &mag);
+        int calibStatus = system * 1000 + gyro * 100 + accel * 10 + mag;
 
         // M9N (GNSS) Data
         vicCAN.send(CMD_GNSS_LAT, gpsData[0]);
         vicCAN.send(CMD_GNSS_LON, gpsData[1]);
-        vicCAN.send(CMD_GNSS_SAT, gpsData[2]);
+        vicCAN.send(CMD_GNSS_SAT, gpsData[2], gpsAltitude);  // SAT command now includes altitude
 
         // BNO (IMU) Data
-        vicCAN.send(CMD_DATA_IMU_GYRO, bnoData2[0], bnoData2[1], bnoData2[2]);  // TODO: Might include calibration status here
+        vicCAN.send(CMD_DATA_IMU_GYRO, bnoData2[0], bnoData2[1], bnoData2[2], calibStatus);
         vicCAN.send(CMD_DATA_IMU_ACCEL_HEADING, bnoData2[3], bnoData2[4], bnoData2[5], bnoData2[6]);
 
         // BMP (Humidity, altitude, pressure) Data
-        vicCAN.send(CMD_DATA_BMP, bmp.readTemperature(), bmp.readAltitude(SEALEVELPRESSURE_HPA), bmp.readPressure() / 100.0);
+        vicCAN.send(CMD_DATA_BMP, bmp.readTemperature(), bmp.readAltitude(SEALEVELPRESSURE_HPA), bmp.readPressure() * 0.1);  // Pascal to mBar*10
     }
 
     if (millis() - lastVoltRead > 1000) {
@@ -280,7 +320,7 @@ void loop() {
         float vBatt = convertADC(analogRead(PIN_VDIV_BATT), 10, 2.21);
         float v12 = convertADC(analogRead(PIN_VDIV_12V), 10, 3.32);
         float v5 = convertADC(analogRead(PIN_VDIV_5V), 10, 10);
-        float v33 = convertADC(analogRead(PIN_VDIV_3V3), 10, 1.1);
+        float v33 = convertADC(analogRead(PIN_VDIV_3V3), 10, 10);
 
         vicCAN.send(CMD_POWER_VOLTAGE, vBatt * 100, v12 * 100, v5 * 100, v33 * 100);
     }
@@ -296,16 +336,7 @@ void loop() {
         vicCAN.parseData(canData);
 
         Serial.print("VicCAN: ");
-        Serial.print(commandID);
-        Serial.print("; ");
-        if (canData.size() > 0) {
-            for (const double& data : canData) {
-                Serial.print(data);
-                Serial.print(", ");
-            }
-        }
-        Serial.println();
-
+        vicCAN.printFrame(&Serial);
 
         // Misc
 
@@ -337,9 +368,9 @@ void loop() {
             if (canData.size() == 1) {
                 lastCtrlCmd = millis();
                 if (canData[0] == 0)
-                    COMMS_UART.println("brake,on");
-                else if (canData[0] == 1)
                     COMMS_UART.println("brake,off");
+                else if (canData[0] == 1)
+                    COMMS_UART.println("brake,on");
             }
         }
         else if (commandID == CMD_REV_SET_DUTY) {
@@ -349,6 +380,16 @@ void loop() {
                 COMMS_UART.print(canData[0]);
                 COMMS_UART.print(",");
                 COMMS_UART.println(canData[1]);
+            }
+        }
+
+        // Submodule-specific
+
+        else if (commandID == 41) {  // turn to
+            if (canData.size() == 2 && canData[1] != 0) {
+                turningToStatus.enabled = true;
+                turningToStatus.targetHeading = canData[0];
+                turningToStatus.timeoutStamp = millis() + canData[1] * 1000;
             }
         }
     }
@@ -370,6 +411,7 @@ void loop() {
     //      /////////    //            //    //////////      //
     //                                                       //
     //-------------------------------------------------------//
+    try {
     if (Serial.available()) {
         String input = Serial.readStringUntil('\n');
 
@@ -407,7 +449,7 @@ void loop() {
             vicCAN.relayFromSerial(args);
         }
 
-        else if (args[0] == "can_relay_mode") {
+        else if (args[0] == "can_relay_mode" && args.size() == 2) {
             if (args[1] == "on") {
                 vicCAN.relayOn();
             } else if (args[1] == "off") {
@@ -548,11 +590,20 @@ void loop() {
         {
             for(int i = 0; i < 3; i++)
             {
-                led_rbg[i] = args[i+1].toInt();
+                led_rbg[i] = args.at(i+1).toInt();
             }
             
             setLED(led_rbg[0], led_rbg[1], led_rbg[2]);
         }
+
+        else if (args[0] == "drivemeters" && args.size() == 2) {
+            lastCtrlCmd = millis();
+            COMMS_UART.println(input);
+        }
+    }
+    } catch(std::out_of_range& e) {
+        Serial.println("Error: Out of range (not enough arguments provided)");
+        Serial.println(e.what());
     }
 
     // Relay data from the motor controller back over USB
@@ -563,10 +614,17 @@ void loop() {
         std::vector<String> args = {};  // Initialize empty vector to hold separated arguments
         parseInput(input, args);   // Separate `input` by commas and place into args vector
 
-        Serial.println(input);
+        if (args[0] != "motorstatus") {
+            Serial.print("Motor MCU: ");
+            Serial.println(input);
+        }
 
         if (checkArgs(args, 4) && args[0] == "motorstatus") {
             vicCAN.send(CMD_REVMOTOR_FEEDBACK, args[1].toInt(), args[2].toInt(), args[3].toInt(), args[4].toInt());
+        }
+
+        else if (args[0] == "can_relay_fromvic") {
+            Serial.println(input);
         }
     }
 }
@@ -715,6 +773,17 @@ void setLED(int r_val, int b_val, int g_val)
     {
         leds[i] = CRGB(r_val, b_val, g_val);
         FastLED.show();
-        delay(10);
+        //delay(10);
     }
+}
+
+float clamp_angle(float angle) {
+    angle = fmod(angle, 360.0);
+    if (angle < 0) {
+        angle += 360;
+    }
+    if (angle > 180) {
+        angle -= 360;
+    }
+    return angle;
 }
