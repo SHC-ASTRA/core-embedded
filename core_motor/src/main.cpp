@@ -213,10 +213,15 @@ void loop() {
         lastMotorStatus = millis();
 
         for (int i = 0; i < 4; i++) {
-            if (millis() - motorList[i]->status1.timestamp > 500)  // Don't send outdated data
-                continue;
-            COMMS_UART.printf("motorstatus,%d,%d,%d,%d\n", motorList[i]->getID(), int(motorList[i]->status1.motorTemperature * 10),
-                int(motorList[i]->status1.busVoltage * 10), int(motorList[i]->status1.outputCurrent * 10));
+            if (millis() - motorList[i]->status1.timestamp < 500) {
+                COMMS_UART.printf("motorpower,%d,%d,%d,%d\n", motorList[i]->getID(), int(motorList[i]->status1.motorTemperature * 10),
+                    int(motorList[i]->status1.busVoltage * 10), int(motorList[i]->status1.outputCurrent * 10));
+            }
+            if (millis() - motorList[i]->status1.timestamp < 500
+                && millis() - motorList[i]->status2.timestamp < 500) {
+                COMMS_UART.printf("motormotion,%d,%d,%d\n", motorList[i]->getID(), int(motorList[i]->status2.sensorPosition),
+                    int(motorList[i]->status1.sensorVelocity));
+            }
         }
     }
 
@@ -306,7 +311,7 @@ void loop() {
         //  Motors  //
         //----------//
 
-        else if (args[0] == "ctrl") // Is looking for a command that looks like "ctrl,LeftY-Axis,RightY-Axis" where LY,RY are >-1 and <1
+        else if (args[0] == "ctrl" || args[0] == "set_duty") // Is looking for a command that looks like "ctrl,LeftY-Axis,RightY-Axis" where LY,RY are >-1 and <1
         {   
             lastCtrlCmd = millis();
             if (input != prevCommand)
@@ -331,7 +336,7 @@ void loop() {
             }
         }
 
-        else if (args[0] == "ctrl_send") {
+        else if (args[0] == "ctrl_send" || args[0] == "send_duty") {
             lastCtrlCmd = millis();
 
             if (checkArgs(args, 2))
@@ -351,6 +356,18 @@ void loop() {
             }
         }
 
+        else if (args[0] == "set_vel") {
+            lastCtrlCmd = millis();
+
+            if (checkArgs(args, 2)) {
+                motorList[0]->setSpeed(args[1].toFloat());
+                motorList[1]->setSpeed(args[1].toFloat());
+
+                motorList[2]->setSpeed(-1 * args[2].toFloat());
+                motorList[3]->setSpeed(-1 * args[2].toFloat());
+            }
+        }
+
         else if (args[0] == "brake") 
         {
             if (args[1] == "on") 
@@ -364,6 +381,7 @@ void loop() {
             }
         }
 
+        // TODO: deprecate--these are not used, should use other, direct commands
         else if (args[0] == "auto") // Commands for autonomy
         { 
             lastCtrlCmd = millis();
@@ -421,6 +439,8 @@ void loop() {
                 driveMeters(args[1].toFloat());
             }
         }
+
+        // Debug
 
         else if (args[0] == "id") {
             CAN_identifySparkMax(args[1].toInt());
