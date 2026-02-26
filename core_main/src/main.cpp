@@ -390,6 +390,17 @@ void loop() {
                 COMMS_UART.print(",");
                 COMMS_UART.println(canData[1]);
             }
+            else if (canData.size() == 4) {
+                lastCtrlCmd = millis();
+                COMMS_UART.print("set_vel,");
+                COMMS_UART.print(canData[0]);
+                COMMS_UART.print(",");
+                COMMS_UART.print(canData[1]);
+                COMMS_UART.print(",");
+                COMMS_UART.print(canData[2]);
+                COMMS_UART.print(",");
+                COMMS_UART.println(canData[3]);
+            }
         }
 
         // Submodule-specific

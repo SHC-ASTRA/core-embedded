@@ -218,7 +218,8 @@ void loop() {
                     int(motorList[i]->status1.busVoltage * 10), int(motorList[i]->status1.outputCurrent * 10));
             }
             if (millis() - motorList[i]->status1.timestamp < 500
-                && millis() - motorList[i]->status2.timestamp < 500) {
+                && millis() - motorList[i]->status2.timestamp < 500)
+            {
                 COMMS_UART.printf("motormotion,%d,%d,%d\n", motorList[i]->getID(), int(motorList[i]->status2.sensorPosition),
                     int(motorList[i]->status1.sensorVelocity));
             }
@@ -365,6 +366,13 @@ void loop() {
 
                 motorList[2]->setSpeed(-1 * args[2].toFloat());
                 motorList[3]->setSpeed(-1 * args[2].toFloat());
+            }
+            else if (checkArgs(args, 4)) {
+                motorList[0]->setSpeed(args[1].toFloat());
+                motorList[1]->setSpeed(args[2].toFloat());
+
+                motorList[2]->setSpeed(-1 * args[3].toFloat());
+                motorList[3]->setSpeed(-1 * args[4].toFloat());
             }
         }
 
