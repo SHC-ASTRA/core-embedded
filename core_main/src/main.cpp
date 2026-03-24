@@ -376,7 +376,7 @@ void loop() {
         else if (commandID == CMD_REV_SET_DUTY) {
             if (canData.size() == 2) {
                 lastCtrlCmd = millis();
-                COMMS_UART.print("ctrl,");
+                COMMS_UART.print("set_duty,");
                 COMMS_UART.print(canData[0]);
                 COMMS_UART.print(",");
                 COMMS_UART.println(canData[1]);
@@ -385,14 +385,14 @@ void loop() {
         else if (commandID == 20) {  // TODO: change to CMD_REV_SET_VEL after rover_embedded_lib change
             if (canData.size() == 2) {
                 lastCtrlCmd = millis();
-                COMMS_UART.print("set_vel,");
+                COMMS_UART.print("send_vel,");
                 COMMS_UART.print(canData[0]);
                 COMMS_UART.print(",");
                 COMMS_UART.println(canData[1]);
             }
             else if (canData.size() == 4) {
                 lastCtrlCmd = millis();
-                COMMS_UART.print("set_vel,");
+                COMMS_UART.print("send_vel,");
                 COMMS_UART.print(canData[0]);
                 COMMS_UART.print(",");
                 COMMS_UART.print(canData[1]);

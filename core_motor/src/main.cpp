@@ -49,10 +49,10 @@
 //---------------------//
 
 // AstraMotors(int setMotorID, int setCtrlMode, bool setInverted, int setGearBox)
-AstraMotors Motor1(MOTOR_ID_FL, sparkMax_ctrlType::kDutyCycle, false, WHEEL_GEARBOX);  // Front Left
-AstraMotors Motor2(MOTOR_ID_BL, sparkMax_ctrlType::kDutyCycle, false, WHEEL_GEARBOX);  // Back Left
-AstraMotors Motor3(MOTOR_ID_FR, sparkMax_ctrlType::kDutyCycle, true, WHEEL_GEARBOX);   // Front Right
-AstraMotors Motor4(MOTOR_ID_BR, sparkMax_ctrlType::kDutyCycle, true, WHEEL_GEARBOX);   // Back Right
+AstraMotors Motor1(MOTOR_ID_FL, false, WHEEL_GEARBOX);  // Front Left
+AstraMotors Motor2(MOTOR_ID_BL, false, WHEEL_GEARBOX);  // Back Left
+AstraMotors Motor3(MOTOR_ID_FR, true, WHEEL_GEARBOX);   // Front Right
+AstraMotors Motor4(MOTOR_ID_BR, true, WHEEL_GEARBOX);   // Back Right
 
 AstraMotors* motorList[4] = {&Motor1, &Motor2, &Motor3, &Motor4};  // Left motors first, right motors second
 
@@ -298,8 +298,7 @@ void loop() {
         //  Motors  //
         //----------//
 
-        else if (args[0] == "ctrl" ||
-                 args[0] == "set_duty")  // Is looking for a command that looks like
+        else if (args[0] == "set_duty")  // Is looking for a command that looks like
                                          // "ctrl,LeftY-Axis,RightY-Axis" where LY,RY are >-1 and <1
         {
             lastCtrlCmd = millis();
@@ -322,7 +321,7 @@ void loop() {
             }
         }
 
-        else if (args[0] == "ctrl_send" || args[0] == "send_duty") {
+        else if (args[0] == "send_duty") {
             lastCtrlCmd = millis();
 
             if (checkArgs(args, 2)) {
@@ -340,21 +339,21 @@ void loop() {
             }
         }
 
-        else if (args[0] == "set_vel") {
+        else if (args[0] == "send_vel") {
             lastCtrlCmd = millis();
 
             if (checkArgs(args, 2)) {
-                motorList[0]->setSpeed(args[1].toFloat());
-                motorList[1]->setSpeed(args[1].toFloat());
+                motorList[0]->sendSpeed(args[1].toFloat());
+                motorList[1]->sendSpeed(args[1].toFloat());
 
-                motorList[2]->setSpeed(-1 * args[2].toFloat());
-                motorList[3]->setSpeed(-1 * args[2].toFloat());
+                motorList[2]->sendSpeed(-1 * args[2].toFloat());
+                motorList[3]->sendSpeed(-1 * args[2].toFloat());
             } else if (checkArgs(args, 4)) {
-                motorList[0]->setSpeed(args[1].toFloat());
-                motorList[1]->setSpeed(args[2].toFloat());
+                motorList[0]->sendSpeed(args[1].toFloat());
+                motorList[1]->sendSpeed(args[2].toFloat());
 
-                motorList[2]->setSpeed(-1 * args[3].toFloat());
-                motorList[3]->setSpeed(-1 * args[4].toFloat());
+                motorList[2]->sendSpeed(-1 * args[3].toFloat());
+                motorList[3]->sendSpeed(-1 * args[4].toFloat());
             }
         }
 
