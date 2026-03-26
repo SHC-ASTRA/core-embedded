@@ -258,7 +258,7 @@ void loop() {
 
         if (millis() > turningToStatus.timeoutStamp) {
             turningToStatus.enabled = false;
-            COMMS_UART.println("ctrl,0,0");
+            COMMS_UART.println("set_duty,0,0");
         } else {
             // Get heading measurement from IMU
             sensors_event_t orientationData;
@@ -272,11 +272,11 @@ void loop() {
 
             if (abs(error) < 10) {
                 turningToStatus.enabled = false;
-                COMMS_UART.println("ctrl,0,0");
+                COMMS_UART.println("set_duty,0,0");
             } else if (error > 0) {
-                COMMS_UART.println("ctrl,0.75,-0.75");
+                COMMS_UART.println("set_duty,0.75,-0.75");
             } else {
-                COMMS_UART.println("ctrl,-0.75,0.75");
+                COMMS_UART.println("set_duty,-0.75,0.75");
             }
         }
     }
@@ -356,7 +356,7 @@ void loop() {
         // REV
 
         else if (commandID == CMD_REV_STOP) {
-            COMMS_UART.println("ctrl,stop");
+            COMMS_UART.println("stop");
         }
         else if (commandID == CMD_REV_IDENTIFY) {
             if (canData.size() == 1) {
