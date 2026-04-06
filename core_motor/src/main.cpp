@@ -48,7 +48,7 @@
 //  Component classes  //
 //---------------------//
 
-// AstraMotors(int setMotorID, int setCtrlMode, bool setInverted, int setGearBox)
+// AstraMotors(int setMotorID, bool setInverted, int setGearBox)
 AstraMotors Motor1(MOTOR_ID_FL, false, WHEEL_GEARBOX);  // Front Left
 AstraMotors Motor2(MOTOR_ID_BL, false, WHEEL_GEARBOX);  // Back Left
 AstraMotors Motor3(MOTOR_ID_FR, true, WHEEL_GEARBOX);   // Front Right
