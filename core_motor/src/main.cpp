@@ -76,7 +76,6 @@ unsigned long lastMotorStatus = 0;
 
 void Stop();
 void loopHeartbeats();
-void driveMeters(float meters);
 float getDriveSpeed();
 
 
@@ -180,19 +179,8 @@ void loop() {
     if (millis() - lastCtrlCmd > 2000)  // if no control commands are received for 2 seconds
     {
         lastCtrlCmd = millis();
-
-        // Only ignore safety timeout if all motors are rotating
-        bool allRotating = true;
-        for (int i = 0; i < 4; i++) {
-            if (!motorList[i]->isRotToPos()) {
-                allRotating = false;
-                break;
-            }
-        }
-        if (!allRotating) {
-            COMMS_UART.println("No Control, Safety Timeout");
-            Stop();
-        }
+        COMMS_UART.println("No Control, Safety Timeout");
+        Stop();
     }
 
     // Motor status debug printout
@@ -369,32 +357,6 @@ void loop() {
             }
         }
 
-        else if (args[0] == "drivemeters") {
-            // If all of the motors are turning, then ignore and stave off safety timeout.
-            // If some but not all motors are turning, then stop and re-start drivemeters.
-            bool allRotating = true;
-            bool anyRotating = false;
-            for (int i = 0; i < 4; i++) {
-                if (!motorList[i]->isRotToPos()) {
-                    allRotating = false;
-                } else {
-                    anyRotating = true;
-                }
-            }
-
-            if (allRotating) {
-                COMMS_UART.println("All motors rotating, ignoring drivemeters command");
-                lastCtrlCmd = millis();
-                return;
-            } else if (anyRotating) {
-                // Let the loop do its thing if some but not all motors are rotating
-                COMMS_UART.println("Some motors rotating");
-                return;
-            } else {
-                driveMeters(args[1].toFloat());
-            }
-        }
-
         // Debug
 
         else if (args[0] == "id") {
@@ -436,17 +398,6 @@ void Stop() {
     for (int i = 0; i < 4; i++) {
         motorList[i]->stop();
     }
-}
-
-void driveMeters(float meters) {
-    const float degrees = (meters / WHEEL_CIRCUMFERENCE) * 360.0;
-
-    // Left motors
-    Motor1.turnByDeg(degrees);
-    Motor2.turnByDeg(degrees);
-    // Right motors
-    Motor3.turnByDeg(degrees);
-    Motor4.turnByDeg(degrees);
 }
 
 float getDriveSpeed() {

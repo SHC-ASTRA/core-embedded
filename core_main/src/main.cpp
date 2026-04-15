@@ -583,21 +583,6 @@ void loop() {
 
                 }
 
-                else if(args[1] == "forwards") // auto,forwards
-                {  
-                    Serial1.println(input);
-                }
-
-                else if(args[1] == "backwards") // auto,backwards
-                { 
-                    Serial1.println(input);
-                }
-
-                else if(args[1] == "stop") // auto,stop
-                {  
-                    Serial1.println(input);
-                }
-
             }
             else
             {
@@ -614,11 +599,6 @@ void loop() {
             }
             
             setLED(led_rbg[0], led_rbg[1], led_rbg[2]);
-        }
-
-        else if (args[0] == "drivemeters" && args.size() == 2) {
-            lastCtrlCmd = millis();
-            COMMS_UART.println(input);
         }
     }
     } catch(std::out_of_range& e) {
