@@ -175,9 +175,8 @@ void loop() {
         }
     }
 
-    // Safety timeout
-    if (millis() - lastCtrlCmd > 2000)  // if no control commands are received for 2 seconds
-    {
+    // Safety timeout if no control commands are received for 2 seconds
+    if (millis() - lastCtrlCmd > 2000) {
         lastCtrlCmd = millis();
         COMMS_UART.println("No Control, Safety Timeout");
         Stop();

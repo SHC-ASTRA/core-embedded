@@ -43,7 +43,7 @@
 //---------------------//
 
 // LED Strip
-int led_rbg[3] = {0, 0, 10};  // TODO: verify brightness
+int led_rbg[3] = {0, 0, 10};
 int led_counter = 0;
 CRGB leds[NUM_LEDS];
 
