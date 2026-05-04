@@ -43,7 +43,7 @@
 //---------------------//
 
 // LED Strip
-int led_rbg[3] = {0, 0, 255}; //When using multiple colors, use 255 max, when doing R/B/G use 800-900 for best brightness
+int led_rbg[3] = {0, 0, 10};
 int led_counter = 0;
 CRGB leds[NUM_LEDS];
 
@@ -258,7 +258,7 @@ void loop() {
 
         if (millis() > turningToStatus.timeoutStamp) {
             turningToStatus.enabled = false;
-            COMMS_UART.println("ctrl,0,0");
+            COMMS_UART.println("set_duty,0,0");
         } else {
             // Get heading measurement from IMU
             sensors_event_t orientationData;
@@ -272,11 +272,11 @@ void loop() {
 
             if (abs(error) < 10) {
                 turningToStatus.enabled = false;
-                COMMS_UART.println("ctrl,0,0");
+                COMMS_UART.println("set_duty,0,0");
             } else if (error > 0) {
-                COMMS_UART.println("ctrl,0.75,-0.75");
+                COMMS_UART.println("set_duty,0.75,-0.75");
             } else {
-                COMMS_UART.println("ctrl,-0.75,0.75");
+                COMMS_UART.println("set_duty,-0.75,0.75");
             }
         }
     }
@@ -356,7 +356,7 @@ void loop() {
         // REV
 
         else if (commandID == CMD_REV_STOP) {
-            COMMS_UART.println("ctrl,stop");
+            COMMS_UART.println("stop");
         }
         else if (commandID == CMD_REV_IDENTIFY) {
             if (canData.size() == 1) {
@@ -376,16 +376,36 @@ void loop() {
         else if (commandID == CMD_REV_SET_DUTY) {
             if (canData.size() == 2) {
                 lastCtrlCmd = millis();
-                COMMS_UART.print("ctrl,");
+                COMMS_UART.print("set_duty,");
                 COMMS_UART.print(canData[0]);
                 COMMS_UART.print(",");
                 COMMS_UART.println(canData[1]);
             }
         }
+        else if (commandID == 20) {  // TODO: change to CMD_REV_SET_VEL after rover_embedded_lib change
+            if (canData.size() == 2) {
+                lastCtrlCmd = millis();
+                COMMS_UART.print("send_vel,");
+                COMMS_UART.print(canData[0]);
+                COMMS_UART.print(",");
+                COMMS_UART.println(canData[1]);
+            }
+            else if (canData.size() == 4) {
+                lastCtrlCmd = millis();
+                COMMS_UART.print("send_vel,");
+                COMMS_UART.print(canData[0]);
+                COMMS_UART.print(",");
+                COMMS_UART.print(canData[1]);
+                COMMS_UART.print(",");
+                COMMS_UART.print(canData[2]);
+                COMMS_UART.print(",");
+                COMMS_UART.println(canData[3]);
+            }
+        }
 
         // Submodule-specific
 
-        else if (commandID == 41) {  // turn to
+        else if (commandID == 41) {  // TODO: change to CMD_CORE_TURN_TO
             if (canData.size() == 2 && canData[1] != 0) {
                 turningToStatus.enabled = true;
                 turningToStatus.targetHeading = canData[0];
@@ -563,21 +583,6 @@ void loop() {
 
                 }
 
-                else if(args[1] == "forwards") // auto,forwards
-                {  
-                    Serial1.println(input);
-                }
-
-                else if(args[1] == "backwards") // auto,backwards
-                { 
-                    Serial1.println(input);
-                }
-
-                else if(args[1] == "stop") // auto,stop
-                {  
-                    Serial1.println(input);
-                }
-
             }
             else
             {
@@ -595,11 +600,6 @@ void loop() {
             
             setLED(led_rbg[0], led_rbg[1], led_rbg[2]);
         }
-
-        else if (args[0] == "drivemeters" && args.size() == 2) {
-            lastCtrlCmd = millis();
-            COMMS_UART.println(input);
-        }
     }
     } catch(std::out_of_range& e) {
         Serial.println("Error: Out of range (not enough arguments provided)");
@@ -612,18 +612,22 @@ void loop() {
         String input = COMMS_UART.readStringUntil('\n');
         input.trim();
         std::vector<String> args = {};  // Initialize empty vector to hold separated arguments
-        parseInput(input, args);   // Separate `input` by commas and place into args vector
+        parseInput(input, args);        // Separate `input` by commas and place into args vector
 
-        if (args[0] != "motorstatus") {
-            Serial.print("Motor MCU: ");
-            Serial.println(input);
-        }
-
-        if (checkArgs(args, 4) && args[0] == "motorstatus") {
+        if (checkArgs(args, 4) && args[0] == "motorpower") {
             vicCAN.send(CMD_REVMOTOR_FEEDBACK, args[1].toInt(), args[2].toInt(), args[3].toInt(), args[4].toInt());
         }
 
+        else if (checkArgs(args, 3) && args[0] == "motormotion") {
+            vicCAN.send(58, args[1].toInt(), args[2].toInt(), args[3].toInt());
+        }
+
         else if (args[0] == "can_relay_fromvic") {
+            Serial.println(input);
+        }
+
+        else {
+            Serial.print("Motor MCU: ");
             Serial.println(input);
         }
     }

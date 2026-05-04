@@ -48,11 +48,11 @@
 //  Component classes  //
 //---------------------//
 
-// AstraMotors(int setMotorID, int setCtrlMode, bool setInverted, int setGearBox)
-AstraMotors Motor1(MOTOR_ID_FL, sparkMax_ctrlType::kDutyCycle, false, WHEEL_GEARBOX);  // Front Left
-AstraMotors Motor2(MOTOR_ID_BL, sparkMax_ctrlType::kDutyCycle, false, WHEEL_GEARBOX);  // Back Left
-AstraMotors Motor3(MOTOR_ID_FR, sparkMax_ctrlType::kDutyCycle, true, WHEEL_GEARBOX);   // Front Right
-AstraMotors Motor4(MOTOR_ID_BR, sparkMax_ctrlType::kDutyCycle, true, WHEEL_GEARBOX);   // Back Right
+// AstraMotors(int setMotorID, bool setInverted, int setGearBox)
+AstraMotors Motor1(MOTOR_ID_FL, false, WHEEL_GEARBOX);  // Front Left
+AstraMotors Motor2(MOTOR_ID_BL, false, WHEEL_GEARBOX);  // Back Left
+AstraMotors Motor3(MOTOR_ID_FR, true, WHEEL_GEARBOX);   // Front Right
+AstraMotors Motor4(MOTOR_ID_BR, true, WHEEL_GEARBOX);   // Back Right
 
 AstraMotors* motorList[4] = {&Motor1, &Motor2, &Motor3, &Motor4};  // Left motors first, right motors second
 
@@ -74,14 +74,8 @@ unsigned long lastMotorStatus = 0;
 //  Prototypes  //
 //--------------//
 
-void turnCW();
-void turnCCW();
 void Stop();
-void Brake(bool enable);
-void goForwards(float speed);
-void goBackwards(float speed);
 void loopHeartbeats();
-void driveMeters(float meters);
 float getDriveSpeed();
 
 
@@ -129,7 +123,6 @@ void setup() {
     //--------------------//
     //  Misc. Components  //
     //--------------------//
-
 }
 
 
@@ -155,8 +148,7 @@ void loop() {
     //----------//
 
     // Blink the LED
-    if (millis() - lastBlink >= 1000) 
-    {
+    if (millis() - lastBlink >= 1000) {
         lastBlink = millis();
         ledState = !ledState;
         if (ledState)
@@ -166,46 +158,28 @@ void loop() {
     }
 
     // Accelerate motors; update the speed for all motors
-    if (millis() - lastAccel >= 50)
-    {
+    if (millis() - lastAccel >= 50) {
         lastAccel = millis();
-        for (int i = 0; i < 4; i++)
-        {
+        for (int i = 0; i < 4; i++) {
             motorList[i]->accelerate();
         }
     }
 
     // Heartbeat for REV motors
-    if (millis() - lastHB >= 3)
-    {
+    if (millis() - lastHB >= 3) {
         lastHB = millis();
         CAN_sendHeartbeat(heartBeatNum);
         heartBeatNum++;
-        if (heartBeatNum > 4)
-        {
+        if (heartBeatNum > 4) {
             heartBeatNum = 1;
         }
     }
 
-    // Safety timeout
-    if (millis() - lastCtrlCmd > 2000)  // if no control commands are received for 2 seconds
-    {
+    // Safety timeout if no control commands are received for 2 seconds
+    if (millis() - lastCtrlCmd > 2000) {
         lastCtrlCmd = millis();
-
-        // Only ignore safety timeout if all motors are rotating
-        bool allRotating = true;
-        for (int i = 0; i < 4; i++)
-        {
-            if (!motorList[i]->isRotToPos())
-            {
-                allRotating = false;
-                break;
-            }
-        }
-        if (!allRotating) {
-            COMMS_UART.println("No Control, Safety Timeout");
-            Stop();
-        }
+        COMMS_UART.println("No Control, Safety Timeout");
+        Stop();
     }
 
     // Motor status debug printout
@@ -213,10 +187,18 @@ void loop() {
         lastMotorStatus = millis();
 
         for (int i = 0; i < 4; i++) {
-            if (millis() - motorList[i]->status1.timestamp > 500)  // Don't send outdated data
-                continue;
-            COMMS_UART.printf("motorstatus,%d,%d,%d,%d\n", motorList[i]->getID(), int(motorList[i]->status1.motorTemperature * 10),
-                int(motorList[i]->status1.busVoltage * 10), int(motorList[i]->status1.outputCurrent * 10));
+            if (millis() - motorList[i]->status1.timestamp < 500) {
+                COMMS_UART.printf("motorpower,%d,%d,%d,%d\n", motorList[i]->getID(),
+                                  int(motorList[i]->status1.motorTemperature * 10),
+                                  int(motorList[i]->status1.busVoltage * 10),
+                                  int(motorList[i]->status1.outputCurrent * 10));
+            }
+            if (millis() - motorList[i]->status1.timestamp < 500 &&
+                millis() - motorList[i]->status2.timestamp < 500) {
+                COMMS_UART.printf("motormotion,%d,%d,%d\n", motorList[i]->getID(),
+                                  int(motorList[i]->status2.sensorPosition),
+                                  int(motorList[i]->status1.sensorVelocity));
+            }
         }
     }
 
@@ -227,7 +209,7 @@ void loop() {
 
     static CanFrame rxFrame;
     if (ESP32Can.readFrame(rxFrame, 1)) {
-        uint8_t deviceId = rxFrame.identifier & 0x3F;  // [5:0]
+        uint8_t deviceId = rxFrame.identifier & 0x3F;        // [5:0]
         uint32_t apiId = (rxFrame.identifier >> 6) & 0x3FF;  // [15:6]
 
 #if defined(DEBUG_STATUS)
@@ -244,8 +226,7 @@ void loop() {
                     break;
                 }
             }
-        }
-        else if ((apiId & 0x300) == 0x300) {  // Parameter
+        } else if ((apiId & 0x300) == 0x300) {  // Parameter
             printREVParameter(rxFrame);
 #ifdef DEBUG
             Serial.print("From frame: ");
@@ -287,14 +268,12 @@ void loop() {
         //  Misc  //
         //--------//
 
-        /**/ if (args[0] == "ping")
-        {
+        /**/ if (args[0] == "ping") {
             Serial.println("pong");
             Serial1.println("pong");
         }
 
-        else if (args[0] == "time") 
-        {
+        else if (args[0] == "time") {
             COMMS_UART.println(millis());
         }
 
@@ -306,22 +285,20 @@ void loop() {
         //  Motors  //
         //----------//
 
-        else if (args[0] == "ctrl") // Is looking for a command that looks like "ctrl,LeftY-Axis,RightY-Axis" where LY,RY are >-1 and <1
-        {   
+        else if (args[0] == "set_duty")  // Is looking for a command that looks like
+                                         // "ctrl,LeftY-Axis,RightY-Axis" where LY,RY are >-1 and <1
+        {
             lastCtrlCmd = millis();
-            if (input != prevCommand)
-            {
+            if (input != prevCommand) {
                 prevCommand = input;
 
-                if (checkArgs(args, 2))
-                {
+                if (checkArgs(args, 2)) {
                     motorList[0]->setDuty(args[1].toFloat());
                     motorList[1]->setDuty(args[1].toFloat());
 
                     motorList[2]->setDuty(-1 * args[2].toFloat());
                     motorList[3]->setDuty(-1 * args[2].toFloat());
-                } else if (checkArgs(args, 1))
-                {
+                } else if (checkArgs(args, 1)) {
                     motorList[0]->setDuty(args[1].toFloat());
                     motorList[1]->setDuty(args[1].toFloat());
 
@@ -331,18 +308,16 @@ void loop() {
             }
         }
 
-        else if (args[0] == "ctrl_send") {
+        else if (args[0] == "send_duty") {
             lastCtrlCmd = millis();
 
-            if (checkArgs(args, 2))
-            {
+            if (checkArgs(args, 2)) {
                 motorList[0]->sendDuty(args[1].toFloat());
                 motorList[1]->sendDuty(args[1].toFloat());
 
                 motorList[2]->sendDuty(-1 * args[2].toFloat());
                 motorList[3]->sendDuty(-1 * args[2].toFloat());
-            } else if (checkArgs(args, 1))
-            {
+            } else if (checkArgs(args, 1)) {
                 motorList[0]->sendDuty(args[1].toFloat());
                 motorList[1]->sendDuty(args[1].toFloat());
 
@@ -351,76 +326,37 @@ void loop() {
             }
         }
 
-        else if (args[0] == "brake") 
-        {
-            if (args[1] == "on") 
-            {
-                Brake(true);
-            }
-
-            else if (args[1] == "off")
-            {
-                Brake(false);
-            }
-        }
-
-        else if (args[0] == "auto") // Commands for autonomy
-        { 
+        else if (args[0] == "send_vel") {
             lastCtrlCmd = millis();
-            if (input != prevCommand)
-            {
-                if (args[1] == "forwards") // auto,forwards
-                {  
-                    goForwards(args[2].toFloat());
-                }
 
-                else if (args[1] == "backwards") // auto,backwards
-                { 
-                    goBackwards(args[2].toFloat());
-                }
+            if (checkArgs(args, 2)) {
+                motorList[0]->sendSpeed(args[1].toFloat());
+                motorList[1]->sendSpeed(args[1].toFloat());
 
-                else if (args[1] == "TurnCW") // auto,backwards
-                { 
-                    turnCW();
-                }
+                motorList[2]->sendSpeed(-1 * args[2].toFloat());
+                motorList[3]->sendSpeed(-1 * args[2].toFloat());
+            } else if (checkArgs(args, 4)) {
+                motorList[0]->sendSpeed(args[1].toFloat());
+                motorList[1]->sendSpeed(args[2].toFloat());
 
-                else if (args[1] == "TurnCCW") // auto,backwards
-                { 
-                    turnCCW();
-                }
-
-                else if (args[1] == "stop") // auto,stop
-                {  
-                    Stop();
-                }
+                motorList[2]->sendSpeed(-1 * args[3].toFloat());
+                motorList[3]->sendSpeed(-1 * args[4].toFloat());
             }
         }
 
-        else if (args[0] == "drivemeters") {
-            // If all of the motors are turning, then ignore and stave off safety timeout.
-            // If some but not all motors are turning, then stop and re-start drivemeters.
-            bool allRotating = true;
-            bool anyRotating = false;
-            for (int i = 0; i < 4; i++) {
-                if (!motorList[i]->isRotToPos()) {
-                    allRotating = false;
-                } else {
-                    anyRotating = true;
-                }
+        else if (args[0] == "brake") {
+            if (args[1] == "on") {
+                for (int i = 0; i < 4; i++)
+                    motorList[i]->setBrake(true);
             }
 
-            if (allRotating) {
-                COMMS_UART.println("All motors rotating, ignoring drivemeters command");
-                lastCtrlCmd = millis();
-                return;
-            } else if (anyRotating) {
-                // Let the loop do its thing if some but not all motors are rotating
-                COMMS_UART.println("Some motors rotating");
-                return;
-            } else {
-                driveMeters(args[1].toFloat());
+            else if (args[1] == "off") {
+                for (int i = 0; i < 4; i++)
+                    motorList[i]->setBrake(false);
             }
         }
+
+        // Debug
 
         else if (args[0] == "id") {
             CAN_identifySparkMax(args[1].toInt());
@@ -429,7 +365,6 @@ void loop() {
         else if (args[0] == "stop") {
             Stop();
         }
-
 #ifdef DEBUG
         else if (args[0] == "speed" && checkArgs(args, 1)) {
             CAN_sendVelocity(MOTOR_ID_BL, args[1].toFloat());
@@ -456,71 +391,12 @@ void loop() {
 //                                                    //
 //----------------------------------------------------//
 
-// Bypasses the acceleration to make the rover turn clockwise
-// Should only be used for autonomy
-void turnCW()
-{
-    float speed = 0.75;
-    motorList[0]->sendDuty(speed);
-    motorList[1]->sendDuty(speed);
-    motorList[2]->sendDuty(speed);
-    motorList[3]->sendDuty(speed);
-}
-
-// Bypasses the acceleration to make the rover turn counterclockwise
-// Should only be used for autonomy
-void turnCCW()
-{
-    float speed = 0.75 * -1;
-    motorList[0]->sendDuty(speed);
-    motorList[1]->sendDuty(speed);
-    motorList[2]->sendDuty(speed);
-    motorList[3]->sendDuty(speed);
-}
-
 // Bypasses the acceleration to make the rover stop
 // Should only be used for autonomy, but it could probably be used elsewhere
-void Stop()
-{
+void Stop() {
     for (int i = 0; i < 4; i++) {
         motorList[i]->stop();
     }
-}
-
-// Enables or disables brake mode for all motors
-void Brake(bool enable) {
-    for (int i = 0; i < 4; i++)
-        motorList[i]->setBrake(enable);
-}
-
-// Tells the rover to go forwards
-// Does not bypass acceleration
-// Autonomy
-void goForwards(float speed)
-{
-    for (int i = 0; i < 4; i++ )
-        motorList[i]->setDuty(speed);
-}
-
-// Tells the rover to go backwards
-// Does not bypass acceleration
-// Autonomy
-void goBackwards(float speed)
-{
-    float temp = (-1) * speed;
-    for (int i = 0; i < 4; i++ )
-        motorList[i]->setDuty(temp);
-}
-
-void driveMeters(float meters) {
-    const float degrees = (meters / WHEEL_CIRCUMFERENCE) * 360.0;
-
-    // Left motors
-    Motor1.turnByDeg(degrees);
-    Motor2.turnByDeg(degrees);
-    // Right motors
-    Motor3.turnByDeg(degrees);
-    Motor4.turnByDeg(degrees);
 }
 
 float getDriveSpeed() {
@@ -528,7 +404,7 @@ float getDriveSpeed() {
     for (int i = 0; i < 4; i++) {
         sum += abs(motorList[i]->status1.sensorVelocity);
     }
-    const float avgSpeed = sum / 4;  // RPM
-    const float gearBox = 64;  // 64:1 for testbed
+    const float avgSpeed = sum / 4;                          // RPM
+    const float gearBox = 64;                                // 64:1 for testbed
     return (avgSpeed / gearBox) * WHEEL_CIRCUMFERENCE / 60;  // meters per second
 }
