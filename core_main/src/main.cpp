@@ -67,6 +67,7 @@ unsigned long clockTimer = 0;
 unsigned long lastFeedback = 0;
 unsigned long lastCtrlCmd = 0;
 unsigned long lastVoltRead = 0;
+unsigned long lastVersionSend = 0;
 long lastTurn = 0;
 
 
@@ -323,6 +324,11 @@ void loop() {
         float v33 = convertADC(analogRead(PIN_VDIV_3V3), 10, 10);
 
         vicCAN.send(CMD_POWER_VOLTAGE, vBatt * 100, v12 * 100, v5 * 100, v33 * 100);
+    }
+
+    if (millis() - lastVersionSend > 5000) {
+        lastVersionSend = millis();
+        SEND_VERSION_INFO
     }
 
 
