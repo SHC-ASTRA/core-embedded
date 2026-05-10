@@ -379,7 +379,7 @@ void loop() {
                 COMMS_UART.println(canData[1]);
             }
         }
-        else if (commandID == 20) {  // TODO: change to CMD_REV_SET_VEL after rover_embedded_lib change
+        else if (commandID == CMD_REV_SET_VELOCITY) {
             if (canData.size() == 2) {
                 lastCtrlCmd = millis();
                 COMMS_UART.print("send_vel,");
@@ -401,7 +401,7 @@ void loop() {
 
         // Submodule-specific
 
-        else if (commandID == 41) {  // TODO: change to CMD_CORE_TURN_TO
+        else if (commandID == CMD_CORE_TURN_TO) {
             if (canData.size() == 2 && canData[1] != 0) {
                 turningToStatus.enabled = true;
                 turningToStatus.targetHeading = canData[0];
