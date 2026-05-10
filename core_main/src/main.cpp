@@ -284,18 +284,14 @@ void loop() {
 
     if (millis() - lastFeedback >= 2000) {
         lastFeedback = millis();
-        sensors_event_t orientationData, angVelocityData, linearAccelData;
-        bno.getEvent(&orientationData, Adafruit_BNO055::VECTOR_EULER);
-        bno.getEvent(&angVelocityData, Adafruit_BNO055::VECTOR_GYROSCOPE);
-        bno.getEvent(&linearAccelData, Adafruit_BNO055::VECTOR_LINEARACCEL);
 
-        double gpsData[3];
-        float bnoData2[7];
-        float gpsAltitude = 0.0;
-
+        // Pull GPS
+        double gpsData[4];
         getPosition(myGNSS, gpsData);
+
+        // Pull IMU
+        float bnoData2[7];
         pullBNOData(bno, bnoData2);
-        gpsAltitude = myGNSS.getAltitude() / 1000.0;
 
         // Calibration status
         uint8_t system, gyro, accel, mag = 0;
@@ -305,15 +301,20 @@ void loop() {
         // M9N (GNSS) Data
         vicCAN.send(CMD_GNSS_LAT, gpsData[0]);
         vicCAN.send(CMD_GNSS_LON, gpsData[1]);
-        vicCAN.send(CMD_GNSS_SAT, gpsData[2], gpsAltitude);  // SAT command now includes altitude
+        vicCAN.send(CMD_GNSS_SAT, gpsData[2], gpsData[3]);
 
         // BNO (IMU) Data
         vicCAN.send(CMD_DATA_IMU_GYRO, bnoData2[0], bnoData2[1], bnoData2[2], calibStatus);
         vicCAN.send(CMD_DATA_IMU_ACCEL_HEADING, bnoData2[3], bnoData2[4], bnoData2[5], bnoData2[6]);
 
         // BMP (Humidity, altitude, pressure) Data
-        vicCAN.send(CMD_DATA_BMP, bmp.readTemperature(), bmp.readAltitude(SEALEVELPRESSURE_HPA),
-                    bmp.readPressure() * 0.1);  // Pascal to mBar*10
+        if (bmp.performReading()) {
+            float temp = bmp.temperature;
+            float altitude = bmp.readAltitude(SEALEVELPRESSURE_HPA);
+            float pressure = bmp.pressure * 0.1;  // Convert Pa to mBar*10
+            vicCAN.send(CMD_DATA_BMP, temp, altitude, pressure);
+        }
+        
     }
 
     if (millis() - lastVoltRead > 1000) {
