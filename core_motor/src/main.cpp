@@ -75,7 +75,6 @@ unsigned long lastMotorStatus = 0;
 //--------------//
 
 void Stop();
-void loopHeartbeats();
 float getDriveSpeed();
 
 
