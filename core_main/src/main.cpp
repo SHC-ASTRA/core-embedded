@@ -12,11 +12,11 @@
 
 #include <Arduino.h>
 #include <FastLED.h>
-#include <utility/imumaths.h>
 
 #include <cmath>
 // Our own resources
 #include "AstraMisc.h"
+#include "AstraMotors.h"
 #include "AstraSensors.h"
 #include "AstraVicCAN.h"
 #include "CoreMainMCU.h"
@@ -38,6 +38,23 @@
 // CCW: 1,2,3,4
 #define NUM_LEDS 166
 
+// Clucky: 1.11715
+#define WHEEL_CIRCUMFERENCE 1.11715
+// Testbed: 0.6168
+// #define WHEEL_CIRCUMFERENCE 0.6168
+
+// Clucky: 100
+#define WHEEL_GEARBOX 100
+// Testbed: 64
+// #define WHEEL_GEARBOX 64
+
+// REV Motor IDs
+#define MOTOR_ID_FL 2  // REV motor ID for front left wheel
+#define MOTOR_ID_FR 1  // REV motor ID for front right wheel
+#define MOTOR_ID_BL 4  // REV motor ID for back left wheel
+#define MOTOR_ID_BR 3  // REV motor ID for back right wheel
+#define MOTOR_AMOUNT 4
+
 
 //---------------------//
 //  Component classes  //
@@ -56,6 +73,14 @@ SFE_UBLOX_GNSS myGNSS;
 
 Adafruit_BNO055 bno;
 
+// AstraMotors(int setMotorID, bool setInverted, int setGearBox)
+AstraMotors Motor1(MOTOR_ID_FL, false, WHEEL_GEARBOX);  // Front Left
+AstraMotors Motor2(MOTOR_ID_BL, false, WHEEL_GEARBOX);  // Back Left
+AstraMotors Motor3(MOTOR_ID_FR, true, WHEEL_GEARBOX);   // Front Right
+AstraMotors Motor4(MOTOR_ID_BR, true, WHEEL_GEARBOX);   // Back Right
+
+AstraMotors* motorList[4] = {&Motor1, &Motor2, &Motor3, &Motor4};  // Left motors first, right motors second
+
 
 //----------//
 //  Timing  //
@@ -68,6 +93,8 @@ unsigned long clockTimer = 0;
 unsigned long lastFeedback = 0;
 unsigned long lastCtrlCmd = 0;
 unsigned long lastVoltRead = 0;
+unsigned long lastAccel = 0;
+unsigned long lastMotorStatus = 0;
 long lastTurn = 0;
 
 
@@ -82,6 +109,20 @@ String outputBmp();
 String outputGPS();
 void setLED(int r_val, int b_val, int g_val);
 float clamp_angle(float angle);
+void Stop();
+
+void loop2(void* pvParameters) {
+    static uint8_t heartBeatNum = 1;
+    while (true) {
+        CAN_sendHeartbeat(heartBeatNum);
+        heartBeatNum++;
+        if (heartBeatNum > 4)
+        {
+            heartBeatNum = 1;
+        }
+        delay(5);
+    }
+}
 
 
 //--------//
@@ -216,6 +257,16 @@ void setup() {
     //  Misc. Components  //
     //--------------------//
 
+    xTaskCreatePinnedToCore (
+        loop2,     // Function to implement the task
+        "loop2",   // Name of the task
+        1000,      // Stack size in bytes
+        NULL,      // Task input parameter
+        0,         // Priority of the task
+        NULL,      // Task handle.
+        0          // Core where the task should run
+    );
+
     FastLED.addLeds<WS2812B, PIN_LED_STRIP, GRB>(leds, NUM_LEDS);
     FastLED.setBrightness(255);
     for (int i = 0; i < NUM_LEDS; ++i) {
@@ -254,9 +305,36 @@ void loop() {
     }
 #endif
 
+    // Accelerate motors; update the speed for all motors
+    if (millis() - lastAccel >= 50) {
+        lastAccel = millis();
+        for (int i = 0; i < 4; i++) {
+            motorList[i]->accelerate();
+        }
+    }
+
+    // Motor status debug printout
+    if (millis() - lastMotorStatus > 500) {
+        lastMotorStatus = millis();
+
+        for (int i = 0; i < 4; i++) {
+            if (millis() - motorList[i]->status1.timestamp < 500) {
+                vicCAN.send(CMD_REVMOTOR_FEEDBACK, motorList[i]->getID(),
+                            motorList[i]->status1.motorTemperature * 10,
+                            motorList[i]->status1.busVoltage * 10, motorList[i]->status1.outputCurrent * 10);
+            }
+            if (millis() - motorList[i]->status1.timestamp < 500 &&
+                millis() - motorList[i]->status2.timestamp < 500) {
+                vicCAN.send(58, motorList[i]->getID(), motorList[i]->status2.sensorPosition,
+                            motorList[i]->status1.sensorVelocity);
+            }
+        }
+    }
+
     if (millis() - lastTurn > 100 && turningToStatus.enabled) {
         lastTurn = millis();
 
+        // TODO: fix for motor on main
         if (millis() > turningToStatus.timeoutStamp) {
             turningToStatus.enabled = false;
             COMMS_UART.println("set_duty,0,0");
@@ -314,7 +392,6 @@ void loop() {
             float pressure = bmp.pressure * 0.1;  // Convert Pa to mBar*10
             vicCAN.send(CMD_DATA_BMP, temp, altitude, pressure);
         }
-        
     }
 
     if (millis() - lastVoltRead > 1000) {
@@ -331,8 +408,9 @@ void loop() {
     //-------------//
     //  CAN Input  //
     //-------------//
-
-    if (vicCAN.readCan()) {
+    CanFrame rxFrame;
+    bool isREV;
+    if (vicCAN.readCan(&isREV, &rxFrame)) {
         const uint8_t commandID = vicCAN.getCmdId();
         static std::vector<double> canData;
         vicCAN.parseData(canData);
@@ -357,46 +435,48 @@ void loop() {
         // REV
 
         else if (commandID == CMD_REV_STOP) {
-            COMMS_UART.println("stop");
+            Stop();
         } else if (commandID == CMD_REV_IDENTIFY) {
             if (canData.size() == 1) {
-                COMMS_UART.print("rev_id,");
-                COMMS_UART.println(canData[0]);
+                CAN_identifySparkMax(canData[0]);
             }
         } else if (commandID == CMD_REV_IDLE_MODE) {
-            if (canData.size() == 1) {
+            if (canData.size() == 1 && (canData[0] == 0 || canData[0] == 1)) {
                 lastCtrlCmd = millis();
-                if (canData[0] == 0)
-                    COMMS_UART.println("brake,off");
-                else if (canData[0] == 1)
-                    COMMS_UART.println("brake,on");
+                for (int i = 0; i < 4; i++)
+                    motorList[i]->setBrake(canData[0]);
             }
         } else if (commandID == CMD_REV_SET_DUTY) {
             if (canData.size() == 2) {
                 lastCtrlCmd = millis();
-                COMMS_UART.print("set_duty,");
-                COMMS_UART.print(canData[0]);
-                COMMS_UART.print(",");
-                COMMS_UART.println(canData[1]);
-            }
-        }
-        else if (commandID == CMD_REV_SET_VELOCITY) {
-            if (canData.size() == 2) {
-                lastCtrlCmd = millis();
-                COMMS_UART.print("send_vel,");
-                COMMS_UART.print(canData[0]);
-                COMMS_UART.print(",");
-                COMMS_UART.println(canData[1]);
+                motorList[0]->sendDuty(canData[0]);
+                motorList[1]->sendDuty(canData[0]);
+
+                motorList[2]->sendDuty(-1 * canData[1]);
+                motorList[3]->sendDuty(-1 * canData[1]);
             } else if (canData.size() == 4) {
                 lastCtrlCmd = millis();
-                COMMS_UART.print("send_vel,");
-                COMMS_UART.print(canData[0]);
-                COMMS_UART.print(",");
-                COMMS_UART.print(canData[1]);
-                COMMS_UART.print(",");
-                COMMS_UART.print(canData[2]);
-                COMMS_UART.print(",");
-                COMMS_UART.println(canData[3]);
+                motorList[0]->sendDuty(canData[0]);
+                motorList[1]->sendDuty(canData[1]);
+
+                motorList[2]->sendDuty(-1 * canData[2]);
+                motorList[3]->sendDuty(-1 * canData[3]);
+            }
+        } else if (commandID == CMD_REV_SET_VELOCITY) {
+            if (canData.size() == 2) {
+                lastCtrlCmd = millis();
+                motorList[0]->sendSpeed(canData[0]);
+                motorList[1]->sendSpeed(canData[0]);
+
+                motorList[2]->sendSpeed(-1 * canData[1]);
+                motorList[3]->sendSpeed(-1 * canData[1]);
+            } else if (canData.size() == 4) {
+                lastCtrlCmd = millis();
+                motorList[0]->sendSpeed(canData[0]);
+                motorList[1]->sendSpeed(canData[1]);
+
+                motorList[2]->sendSpeed(-1 * canData[2]);
+                motorList[3]->sendSpeed(-1 * canData[3]);
             }
         }
 
@@ -408,6 +488,33 @@ void loop() {
                 turningToStatus.targetHeading = canData[0];
                 turningToStatus.timeoutStamp = millis() + canData[1] * 1000;
             }
+        }
+    } else if (isREV) {  // REV Feedback
+        // Serial.print("Received CAN frame from REV device: ");
+        // printREVFrame(rxFrame);
+        uint8_t deviceId = rxFrame.identifier & 0x3F;        // [5:0]
+        uint32_t apiId = (rxFrame.identifier >> 6) & 0x3FF;  // [15:6]
+
+#if defined(DEBUG_STATUS)
+        // Log message if it seems interesting
+        if (apiId == 0x99 || (apiId & 0x60) == 0x60 || (apiId & 0x300) == 0x300) {
+            printREVFrame(rxFrame);
+        }
+#endif
+
+        if ((apiId & 0x60) == 0x60) {  // Periodic status
+            for (int i = 0; i < 4; i++) {
+                if (deviceId == motorList[i]->getID()) {
+                    motorList[i]->parseStatus(apiId, rxFrame.data);
+                    break;
+                }
+            }
+        } else if ((apiId & 0x300) == 0x300) {  // Parameter
+            printREVParameter(rxFrame);
+#ifdef DEBUG
+            Serial.print("From frame: ");
+            printREVFrame(rxFrame);
+#endif
         }
     }
 
@@ -626,6 +733,13 @@ void loop() {
 //----------------------------------------------------//
 
 
+// Bypasses the acceleration to make the rover stop
+// Should only be used for autonomy, but it could probably be used elsewhere
+void Stop() {
+    for (int i = 0; i < 4; i++) {
+        motorList[i]->stop();
+    }
+}
 
 // Prints the output of the BNO in one line
 String outputBno() {
