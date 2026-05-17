@@ -61,7 +61,6 @@
 //---------------------//
 
 // LED Strip
-int led_rbg[3] = {0, 0, 10};
 int led_counter = 0;
 CRGB leds[NUM_LEDS];
 
@@ -269,8 +268,9 @@ void setup() {
 
     FastLED.addLeds<WS2812B, PIN_LED_STRIP, GRB>(leds, NUM_LEDS);
     FastLED.setBrightness(255);
+    int led_rgb[3] = {0, 0, 10};
     for (int i = 0; i < NUM_LEDS; ++i) {
-        leds[i] = CRGB(led_rbg[0], led_rbg[1], led_rbg[2]);
+        leds[i] = CRGB(led_rgb[0], led_rgb[1], led_rgb[2]);
         FastLED.show();
         delay(10);
     }
@@ -482,6 +482,12 @@ void loop() {
 
         // Submodule-specific
 
+        else if (commandID == CMD_CORE_LED_STRIP) {
+            if (canData.size() == 4) {
+                setLED(canData[0], canData[1], canData[2]);
+            }
+        }
+
         else if (commandID == CMD_CORE_TURN_TO) {
             if (canData.size() == 2 && canData[1] != 0) {
                 turningToStatus.enabled = true;
@@ -679,11 +685,12 @@ void loop() {
 
         // set LED strip color format: led_set,r,b,g
         else if (args[0] == "led_set") {
+            int led_rgb[3] = {0, 0, 0};
             for (int i = 0; i < 3; i++) {
-                led_rbg[i] = args.at(i + 1).toInt();
+                led_rgb[i] = args.at(i + 1).toInt();
             }
 
-            setLED(led_rbg[0], led_rbg[1], led_rbg[2]);
+            setLED(led_rgb[0], led_rgb[1], led_rgb[2]);
         }
     }
 
