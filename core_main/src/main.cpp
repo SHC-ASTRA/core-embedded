@@ -275,6 +275,11 @@ void setup() {
         FastLED.show();
         delay(10);
     }
+
+    // The sparkmaxes are probably ready by now right
+    for (int i = 0; i < MOTOR_AMOUNT; i++) {
+        motorList[i]->setSlowStatusPeriods();
+    }
 }
 
 
