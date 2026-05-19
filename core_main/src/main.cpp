@@ -29,8 +29,6 @@
 // Comment out to disable LED blinking
 #define BLINK
 
-#define COMMS_UART Serial1  // UART between Main-Motor
-
 // strip 1: 1-40
 // strip 2: 41-82
 // strip 3: 83-124
@@ -103,7 +101,6 @@ long lastTurn = 0;
 //--------------//
 
 int findRotationDirection(float current_direction, float target_direction);
-bool autoTurn(int time, float target_direction);
 String outputBno();
 String outputBmp();
 String outputGPS();
@@ -174,7 +171,6 @@ void setup() {
     //------------------//
 
     Serial.begin(SERIAL_BAUD);
-    COMMS_UART.begin(COMMS_UART_BAUD);
 
     if (ESP32Can.begin(TWAI_SPEED_1000KBPS, CAN_TX, CAN_RX))
         Serial.println("CAN bus started!");
@@ -637,71 +633,6 @@ void loop() {
         //  Physical  //
         //------------//
 
-        // Is looking for a command that looks like
-        // "ctrl,LeftY-Axis,RightY-Axis" where LY,RY are >-1 and <1
-        else if (args[0] == "ctrl" || args[0] == "ctrl_send" || args[0] == "brake") {
-            lastCtrlCmd = millis();
-            Serial1.println(input);
-        }
-
-        // Takes X and Y position of controller's joystick
-        else if (args[0] == "joystick_ctrl") {
-            lastCtrlCmd = millis();
-            if (checkArgs(args, 2)) {
-#define JOYSTICK_MAX 1.0
-
-                // Inputs
-                float joy_x = args[1].toFloat();
-                float joy_y = args[2].toFloat();
-                // Outputs
-                float left_motor_duty;
-                float right_motor_duty;
-
-                // Speed rover will drive is distance of joystick away from center
-                float driveSpeed = map_d(sqrt(joy_x * joy_x + joy_y * joy_y), 0, JOYSTICK_MAX, 0, 1);
-
-                // Use positive joy_x by default
-
-                left_motor_duty =
-                    joy_y >= 0 ? driveSpeed : -1 * driveSpeed;  // Positive forwards, negative backwards
-                right_motor_duty = map_d(joy_y, -JOYSTICK_MAX, JOYSTICK_MAX, -1 * driveSpeed, driveSpeed);
-
-                // Flip if joy_x negative
-                if (joy_x < 0) {
-                    const float temp = left_motor_duty;
-                    left_motor_duty = right_motor_duty;
-                    right_motor_duty = temp;
-                }
-
-                // Send to motor mcu
-                Serial1.print("ctrl,");
-                Serial1.print(left_motor_duty);
-                Serial1.print(",");
-                Serial1.println(right_motor_duty);
-            }
-        }
-
-        // Autonomy
-        else if (args[0] == "auto") {
-            lastCtrlCmd = millis();
-            if (command != prevCommand) {
-                if (args[1] == "turningTo") {
-                    bool success = false;
-
-                    success = autoTurn(args[2].toFloat(), args[3].toFloat());
-                    if (success) {
-                        Serial.println("turningTo,success");
-                    } else {
-                        Serial.println("turningTo,fail");
-                    }
-                }
-
-            } else {
-                // pass if command if control command is same as previous
-            }
-
-        }
-
         // set LED strip color format: led_set,r,b,g
         else if (args[0] == "led_set") {
             int led_rgb[3] = {0, 0, 0};
@@ -710,32 +641,6 @@ void loop() {
             }
 
             setLED(led_rgb[0], led_rgb[1], led_rgb[2]);
-        }
-    }
-
-    // Relay data from the motor controller back over USB
-    if (COMMS_UART.available()) {
-        String input = COMMS_UART.readStringUntil('\n');
-        input.trim();
-        std::vector<String> args = {};  // Initialize empty vector to hold separated arguments
-        parseInput(input, args);        // Separate `input` by commas and place into args vector
-
-        if (checkArgs(args, 4) && args[0] == "motorpower") {
-            vicCAN.send(CMD_REVMOTOR_FEEDBACK, args[1].toInt(), args[2].toInt(), args[3].toInt(),
-                        args[4].toInt());
-        }
-
-        else if (checkArgs(args, 3) && args[0] == "motormotion") {
-            vicCAN.send(58, args[1].toInt(), args[2].toInt(), args[3].toInt());
-        }
-
-        else if (args[0] == "can_relay_fromvic") {
-            Serial.println(input);
-        }
-
-        else {
-            Serial.print("Motor MCU: ");
-            Serial.println(input);
         }
     }
 }
@@ -809,47 +714,6 @@ String outputBmp() {
     // sprintf(output, "%f,%f,%f",bmpData[0],bmpData[1],bmpData[2]);
 
     return output;
-}
-
-// Specify where the rover should turn
-// and how long it should take before
-// the rover decides that it has failed
-// to turn
-bool autoTurn(int time, float target_direction) {
-    int startTime = millis();
-    unsigned long expectedTime;
-    expectedTime = time;
-
-    float current_direction = getBNOOrient(bno);
-    bool turningRight = findRotationDirection(current_direction, target_direction);
-
-    Serial.printf("StartTime: %d, Expected: %d", (int)startTime, (int)expectedTime);
-
-
-    while (millis() - startTime < expectedTime) {
-        current_direction = getBNOOrient(bno);
-        if (!((current_direction < target_direction + 2) && (current_direction > target_direction - 2))) {
-            turningRight = findRotationDirection(current_direction, target_direction);
-
-            Serial.print("Turning to: ");
-            Serial.println(target_direction);
-            Serial.print("Currently at: ");
-            Serial.println(getBNOOrient(bno));
-
-            if (turningRight) {
-                Serial1.println("auto,TurnCW");
-            } else {
-                Serial1.println("auto,TurnCCW");
-            }
-
-        } else {
-            Serial1.println("auto,stop");
-            return true;
-        }
-    }
-
-    Serial1.println("auto,stop");
-    return false;
 }
 
 
