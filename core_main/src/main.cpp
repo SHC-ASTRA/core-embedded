@@ -11,14 +11,15 @@
 //------------//
 
 #include <Arduino.h>
-#include <cmath>
-#include <utility/imumaths.h>
 #include <FastLED.h>
+
+#include <cmath>
 // Our own resources
-#include "CoreMainMCU.h"
 #include "AstraMisc.h"
-#include "AstraVicCAN.h"
+#include "AstraMotors.h"
 #include "AstraSensors.h"
+#include "AstraVicCAN.h"
+#include "CoreMainMCU.h"
 
 
 //------------//
@@ -28,8 +29,6 @@
 // Comment out to disable LED blinking
 #define BLINK
 
-#define COMMS_UART Serial1  // UART between Main-Motor
-
 // strip 1: 1-40
 // strip 2: 41-82
 // strip 3: 83-124
@@ -37,23 +36,47 @@
 // CCW: 1,2,3,4
 #define NUM_LEDS 166
 
+// Clucky: 1.11715
+#define WHEEL_CIRCUMFERENCE 1.11715
+// Testbed: 0.6168
+// #define WHEEL_CIRCUMFERENCE 0.6168
+
+// Clucky: 100
+#define WHEEL_GEARBOX 100
+// Testbed: 64
+// #define WHEEL_GEARBOX 64
+
+// REV Motor IDs
+#define MOTOR_ID_FL 2  // REV motor ID for front left wheel
+#define MOTOR_ID_FR 1  // REV motor ID for front right wheel
+#define MOTOR_ID_BL 4  // REV motor ID for back left wheel
+#define MOTOR_ID_BR 3  // REV motor ID for back right wheel
+#define MOTOR_AMOUNT 4
+
 
 //---------------------//
 //  Component classes  //
 //---------------------//
 
 // LED Strip
-int led_rbg[3] = {0, 0, 10};
 int led_counter = 0;
 CRGB leds[NUM_LEDS];
 
-//Sensor declarations
+// Sensor declarations
 
 Adafruit_BMP3XX bmp;
 
 SFE_UBLOX_GNSS myGNSS;
 
 Adafruit_BNO055 bno;
+
+// AstraMotors(int setMotorID, bool setInverted, int setGearBox)
+AstraMotors Motor1(MOTOR_ID_FL, false, WHEEL_GEARBOX);  // Front Left
+AstraMotors Motor2(MOTOR_ID_BL, false, WHEEL_GEARBOX);  // Back Left
+AstraMotors Motor3(MOTOR_ID_FR, true, WHEEL_GEARBOX);   // Front Right
+AstraMotors Motor4(MOTOR_ID_BR, true, WHEEL_GEARBOX);   // Back Right
+
+AstraMotors* motorList[4] = {&Motor1, &Motor2, &Motor3, &Motor4};  // Left motors first, right motors second
 
 
 //----------//
@@ -67,6 +90,8 @@ unsigned long clockTimer = 0;
 unsigned long lastFeedback = 0;
 unsigned long lastCtrlCmd = 0;
 unsigned long lastVoltRead = 0;
+unsigned long lastAccel = 0;
+unsigned long lastMotorStatus = 0;
 unsigned long lastVersionSend = 0;
 long lastTurn = 0;
 
@@ -76,12 +101,25 @@ long lastTurn = 0;
 //--------------//
 
 int findRotationDirection(float current_direction, float target_direction);
-bool autoTurn(int time,float target_direction);
 String outputBno();
 String outputBmp();
 String outputGPS();
 void setLED(int r_val, int b_val, int g_val);
 float clamp_angle(float angle);
+void Stop();
+
+void loop2(void* pvParameters) {
+    static uint8_t heartBeatNum = 1;
+    while (true) {
+        CAN_sendHeartbeat(heartBeatNum);
+        heartBeatNum++;
+        if (heartBeatNum > 4)
+        {
+            heartBeatNum = 1;
+        }
+        delay(5);
+    }
+}
 
 
 //--------//
@@ -133,9 +171,8 @@ void setup() {
     //------------------//
 
     Serial.begin(SERIAL_BAUD);
-    COMMS_UART.begin(COMMS_UART_BAUD);
 
-    if(ESP32Can.begin(TWAI_SPEED_1000KBPS, CAN_TX, CAN_RX))
+    if (ESP32Can.begin(TWAI_SPEED_1000KBPS, CAN_TX, CAN_RX))
         Serial.println("CAN bus started!");
     else
         Serial.println("CAN bus failed!");
@@ -145,19 +182,19 @@ void setup() {
     //  Sensors  //
     //-----------//
 
-    if(!bno.begin())
+    if (!bno.begin())
         Serial.println("BNO 055 failed");
-    else 
+    else
         Serial.println("BNO 055 started successfully");
 
-    if(!bmp.begin_I2C())
+    if (!bmp.begin_I2C())
         Serial.println("BMP 388 failed");
-    else 
+    else
         Serial.println("BMP 388 started successfully");
 
-    if(!myGNSS.begin())
+    if (!myGNSS.begin())
         Serial.println("M9N GPS failed");
-    else 
+    else
         Serial.println("M9N GPS started successfully");
 
     initializeBMP(bmp);
@@ -165,63 +202,79 @@ void setup() {
 
     // Setup for GPS
 
-    myGNSS.setI2COutput(COM_TYPE_UBX); //Set the I2C port to output UBX only (turn off NMEA noise)
+    myGNSS.setI2COutput(COM_TYPE_UBX);  // Set the I2C port to output UBX only (turn off NMEA noise)
     myGNSS.setNavigationFrequency(30);
     // Create storage for the time pulse parameters
     UBX_CFG_TP5_data_t timePulseParameters;
 
     // Get the time pulse parameters
     if (myGNSS.getTimePulseParameters(&timePulseParameters) == false)
-    {
         Serial.println(F("getTimePulseParameters failed! not Freezing..."));
-    }
 
     // Print the CFG TP5 version
     Serial.print(F("UBX_CFG_TP5 version: "));
     Serial.println(timePulseParameters.version);
 
-    timePulseParameters.tpIdx = 0; // Select the TIMEPULSE pin
-    //timePulseParameters.tpIdx = 1; // Or we could select the TIMEPULSE2 pin instead, if the module has one
+    timePulseParameters.tpIdx = 0;  // Select the TIMEPULSE pin
+    // timePulseParameters.tpIdx = 1; // Or we could select the TIMEPULSE2 pin instead, if the module has one
 
     // We can configure the time pulse pin to produce a defined frequency or period
     // Here is how to set the frequency:
 
     // While the module is _locking_ to GNSS time, make it generate 2kHz
-    timePulseParameters.freqPeriod = 2000; // Set the frequency/period to 2000Hz
-    timePulseParameters.pulseLenRatio = 0x55555555; // Set the pulse ratio to 1/3 * 2^32 to produce 33:67 mark:space
+    timePulseParameters.freqPeriod = 2000;  // Set the frequency/period to 2000Hz
+    timePulseParameters.pulseLenRatio =
+        0x55555555;  // Set the pulse ratio to 1/3 * 2^32 to produce 33:67 mark:space
 
     // When the module is _locked_ to GNSS time, make it generate 1kHz
-    timePulseParameters.freqPeriodLock = 1000; // Set the frequency/period to 1000Hz
-    timePulseParameters.pulseLenRatioLock = 0x80000000; // Set the pulse ratio to 1/2 * 2^32 to produce 50:50 mark:space
+    timePulseParameters.freqPeriodLock = 1000;  // Set the frequency/period to 1000Hz
+    timePulseParameters.pulseLenRatioLock =
+        0x80000000;  // Set the pulse ratio to 1/2 * 2^32 to produce 50:50 mark:space
 
-    timePulseParameters.flags.bits.active = 1; // Make sure the active flag is set to enable the time pulse. (Set to 0 to disable.)
-    timePulseParameters.flags.bits.lockedOtherSet = 1; // Tell the module to use freqPeriod while locking and freqPeriodLock when locked to GNSS time
-    timePulseParameters.flags.bits.isFreq = 1; // Tell the module that we want to set the frequency (not the period)
-    timePulseParameters.flags.bits.isLength = 0; // Tell the module that pulseLenRatio is a ratio / duty cycle (* 2^-32) - not a length (in us)
-    timePulseParameters.flags.bits.polarity = 1; // Tell the module that we want the rising edge at the top of second. (Set to 0 for falling edge.)
+    timePulseParameters.flags.bits.active =
+        1;  // Make sure the active flag is set to enable the time pulse. (Set to 0 to disable.)
+    timePulseParameters.flags.bits.lockedOtherSet =
+        1;  // Tell the module to use freqPeriod while locking and freqPeriodLock when locked to GNSS time
+    timePulseParameters.flags.bits.isFreq =
+        1;  // Tell the module that we want to set the frequency (not the period)
+    timePulseParameters.flags.bits.isLength =
+        0;  // Tell the module that pulseLenRatio is a ratio / duty cycle (* 2^-32) - not a length (in us)
+    timePulseParameters.flags.bits.polarity =
+        1;  // Tell the module that we want the rising edge at the top of second. (Set to 0 for falling edge.)
 
     // Now set the time pulse parameters
     if (myGNSS.setTimePulseParameters(&timePulseParameters) == false)
-    {
         Serial.println(F("setTimePulseParameters failed!"));
-    }
     else
-    {
         Serial.println(F("Success!"));
-    }
 
 
     //--------------------//
     //  Misc. Components  //
     //--------------------//
 
+    xTaskCreatePinnedToCore (
+        loop2,     // Function to implement the task
+        "loop2",   // Name of the task
+        1000,      // Stack size in bytes
+        NULL,      // Task input parameter
+        0,         // Priority of the task
+        NULL,      // Task handle.
+        0          // Core where the task should run
+    );
+
     FastLED.addLeds<WS2812B, PIN_LED_STRIP, GRB>(leds, NUM_LEDS);
     FastLED.setBrightness(255);
-    for(int i = 0; i < NUM_LEDS; ++i)
-    {
-        leds[i] = CRGB(led_rbg[0], led_rbg[1], led_rbg[2]);
+    int led_rgb[3] = {0, 0, 10};
+    for (int i = 0; i < NUM_LEDS; ++i) {
+        leds[i] = CRGB(led_rgb[0], led_rgb[1], led_rgb[2]);
         FastLED.show();
         delay(10);
+    }
+
+    // The sparkmaxes are probably ready by now right
+    for (int i = 0; i < MOTOR_AMOUNT; i++) {
+        motorList[i]->setSlowStatusPeriods();
     }
 }
 
@@ -254,12 +307,39 @@ void loop() {
     }
 #endif
 
+    // Accelerate motors; update the speed for all motors
+    if (millis() - lastAccel >= 50) {
+        lastAccel = millis();
+        for (int i = 0; i < 4; i++) {
+            motorList[i]->accelerate();
+        }
+    }
+
+    // Motor status debug printout
+    if (millis() - lastMotorStatus > 500) {
+        lastMotorStatus = millis();
+
+        for (int i = 0; i < 4; i++) {
+            if (millis() - motorList[i]->status1.timestamp < 500) {
+                vicCAN.send(CMD_REVMOTOR_FEEDBACK, motorList[i]->getID(),
+                            motorList[i]->status1.motorTemperature * 10,
+                            motorList[i]->status1.busVoltage * 10, motorList[i]->status1.outputCurrent * 10);
+            }
+            if (millis() - motorList[i]->status1.timestamp < 500 &&
+                millis() - motorList[i]->status2.timestamp < 500) {
+                vicCAN.send(58, motorList[i]->getID(), motorList[i]->status2.sensorPosition,
+                            motorList[i]->status1.sensorVelocity);
+            }
+        }
+    }
+
     if (millis() - lastTurn > 100 && turningToStatus.enabled) {
         lastTurn = millis();
 
+        // NOTE: only used by legacy Autonomy
         if (millis() > turningToStatus.timeoutStamp) {
             turningToStatus.enabled = false;
-            COMMS_UART.println("set_duty,0,0");
+            Stop();
         } else {
             // Get heading measurement from IMU
             sensors_event_t orientationData;
@@ -273,30 +353,33 @@ void loop() {
 
             if (abs(error) < 10) {
                 turningToStatus.enabled = false;
-                COMMS_UART.println("set_duty,0,0");
+                Stop();
             } else if (error > 0) {
-                COMMS_UART.println("set_duty,0.75,-0.75");
+                motorList[0]->sendDuty(0.75);
+                motorList[1]->sendDuty(0.75);
+
+                motorList[2]->sendDuty(-0.75);
+                motorList[3]->sendDuty(-0.75);
             } else {
-                COMMS_UART.println("set_duty,-0.75,0.75");
+                motorList[0]->sendDuty(-0.75);
+                motorList[1]->sendDuty(-0.75);
+
+                motorList[2]->sendDuty(0.75);
+                motorList[3]->sendDuty(0.75);
             }
         }
     }
 
-    if((millis()-lastFeedback)>=2000)
-    {
+    if (millis() - lastFeedback >= 2000) {
         lastFeedback = millis();
-        sensors_event_t orientationData , angVelocityData , linearAccelData;
-        bno.getEvent(&orientationData, Adafruit_BNO055::VECTOR_EULER);
-        bno.getEvent(&angVelocityData, Adafruit_BNO055::VECTOR_GYROSCOPE);
-        bno.getEvent(&linearAccelData, Adafruit_BNO055::VECTOR_LINEARACCEL);
 
-        double gpsData[3];
-        float bnoData2[7];
-        float gpsAltitude = 0.0;
-
+        // Pull GPS
+        double gpsData[4];
         getPosition(myGNSS, gpsData);
+
+        // Pull IMU
+        float bnoData2[7];
         pullBNOData(bno, bnoData2);
-        gpsAltitude = myGNSS.getAltitude() / 1000.0;
 
         // Calibration status
         uint8_t system, gyro, accel, mag = 0;
@@ -306,14 +389,19 @@ void loop() {
         // M9N (GNSS) Data
         vicCAN.send(CMD_GNSS_LAT, gpsData[0]);
         vicCAN.send(CMD_GNSS_LON, gpsData[1]);
-        vicCAN.send(CMD_GNSS_SAT, gpsData[2], gpsAltitude);  // SAT command now includes altitude
+        vicCAN.send(CMD_GNSS_SAT, gpsData[2], gpsData[3]);
 
         // BNO (IMU) Data
         vicCAN.send(CMD_DATA_IMU_GYRO, bnoData2[0], bnoData2[1], bnoData2[2], calibStatus);
         vicCAN.send(CMD_DATA_IMU_ACCEL_HEADING, bnoData2[3], bnoData2[4], bnoData2[5], bnoData2[6]);
 
         // BMP (Humidity, altitude, pressure) Data
-        vicCAN.send(CMD_DATA_BMP, bmp.readTemperature(), bmp.readAltitude(SEALEVELPRESSURE_HPA), bmp.readPressure() * 0.1);  // Pascal to mBar*10
+        if (bmp.performReading()) {
+            float temp = bmp.temperature;
+            float altitude = bmp.readAltitude(SEALEVELPRESSURE_HPA);
+            float pressure = bmp.pressure * 0.1;  // Convert Pa to mBar*10
+            vicCAN.send(CMD_DATA_BMP, temp, altitude, pressure);
+        }
     }
 
     if (millis() - lastVoltRead > 1000) {
@@ -335,8 +423,9 @@ void loop() {
     //-------------//
     //  CAN Input  //
     //-------------//
-
-    if(vicCAN.readCan()) {
+    CanFrame rxFrame;
+    bool isREV;
+    if (vicCAN.readCan(&isREV, &rxFrame)) {
         const uint8_t commandID = vicCAN.getCmdId();
         static std::vector<double> canData;
         vicCAN.parseData(canData);
@@ -346,11 +435,10 @@ void loop() {
 
         // Misc
 
-        /**/ if (commandID == CMD_PING) {
+        if (commandID == CMD_PING) {
             vicCAN.respond(1);  // "pong"
             Serial.println("Received ping over CAN");
-        }
-        else if (commandID == CMD_B_LED) {
+        } else if (commandID == CMD_B_LED) {
             if (canData.size() == 1) {
                 if (canData[0] == 0)
                     digitalWrite(LED_BUILTIN, false);
@@ -362,61 +450,92 @@ void loop() {
         // REV
 
         else if (commandID == CMD_REV_STOP) {
-            COMMS_UART.println("stop");
-        }
-        else if (commandID == CMD_REV_IDENTIFY) {
+            Stop();
+        } else if (commandID == CMD_REV_IDENTIFY) {
             if (canData.size() == 1) {
-                COMMS_UART.print("rev_id,");
-                COMMS_UART.println(canData[0]);
+                CAN_identifySparkMax(canData[0]);
             }
-        }
-        else if (commandID == CMD_REV_IDLE_MODE) {
-            if (canData.size() == 1) {
+        } else if (commandID == CMD_REV_IDLE_MODE) {
+            if (canData.size() == 1 && (canData[0] == 0 || canData[0] == 1)) {
                 lastCtrlCmd = millis();
-                if (canData[0] == 0)
-                    COMMS_UART.println("brake,off");
-                else if (canData[0] == 1)
-                    COMMS_UART.println("brake,on");
+                for (int i = 0; i < 4; i++)
+                    motorList[i]->setBrake(canData[0]);
             }
-        }
-        else if (commandID == CMD_REV_SET_DUTY) {
+        } else if (commandID == CMD_REV_SET_DUTY) {
             if (canData.size() == 2) {
                 lastCtrlCmd = millis();
-                COMMS_UART.print("set_duty,");
-                COMMS_UART.print(canData[0]);
-                COMMS_UART.print(",");
-                COMMS_UART.println(canData[1]);
+                motorList[0]->sendDuty(canData[0]);
+                motorList[1]->sendDuty(canData[0]);
+
+                motorList[2]->sendDuty(-1 * canData[1]);
+                motorList[3]->sendDuty(-1 * canData[1]);
+            } else if (canData.size() == 4) {
+                lastCtrlCmd = millis();
+                motorList[0]->sendDuty(canData[0]);
+                motorList[1]->sendDuty(canData[1]);
+
+                motorList[2]->sendDuty(-1 * canData[2]);
+                motorList[3]->sendDuty(-1 * canData[3]);
             }
-        }
-        else if (commandID == 20) {  // TODO: change to CMD_REV_SET_VEL after rover_embedded_lib change
+        } else if (commandID == CMD_REV_SET_VELOCITY) {
             if (canData.size() == 2) {
                 lastCtrlCmd = millis();
-                COMMS_UART.print("send_vel,");
-                COMMS_UART.print(canData[0]);
-                COMMS_UART.print(",");
-                COMMS_UART.println(canData[1]);
-            }
-            else if (canData.size() == 4) {
+                motorList[0]->sendSpeed(canData[0]);
+                motorList[1]->sendSpeed(canData[0]);
+
+                motorList[2]->sendSpeed(-1 * canData[1]);
+                motorList[3]->sendSpeed(-1 * canData[1]);
+            } else if (canData.size() == 4) {
                 lastCtrlCmd = millis();
-                COMMS_UART.print("send_vel,");
-                COMMS_UART.print(canData[0]);
-                COMMS_UART.print(",");
-                COMMS_UART.print(canData[1]);
-                COMMS_UART.print(",");
-                COMMS_UART.print(canData[2]);
-                COMMS_UART.print(",");
-                COMMS_UART.println(canData[3]);
+                motorList[0]->sendSpeed(canData[0]);
+                motorList[1]->sendSpeed(canData[1]);
+
+                motorList[2]->sendSpeed(-1 * canData[2]);
+                motorList[3]->sendSpeed(-1 * canData[3]);
             }
         }
 
         // Submodule-specific
 
-        else if (commandID == 41) {  // TODO: change to CMD_CORE_TURN_TO
+        else if (commandID == CMD_CORE_LED_STRIP) {
+            if (canData.size() == 4) {
+                setLED(canData[0], canData[1], canData[2]);
+            }
+        }
+
+        else if (commandID == CMD_CORE_TURN_TO) {
             if (canData.size() == 2 && canData[1] != 0) {
                 turningToStatus.enabled = true;
                 turningToStatus.targetHeading = canData[0];
                 turningToStatus.timeoutStamp = millis() + canData[1] * 1000;
             }
+        }
+    } else if (isREV) {  // REV Feedback
+        // Serial.print("Received CAN frame from REV device: ");
+        // printREVFrame(rxFrame);
+        uint8_t deviceId = rxFrame.identifier & 0x3F;        // [5:0]
+        uint32_t apiId = (rxFrame.identifier >> 6) & 0x3FF;  // [15:6]
+
+#if defined(DEBUG_STATUS)
+        // Log message if it seems interesting
+        if (apiId == 0x99 || (apiId & 0x60) == 0x60 || (apiId & 0x300) == 0x300) {
+            printREVFrame(rxFrame);
+        }
+#endif
+
+        if ((apiId & 0x60) == 0x60) {  // Periodic status
+            for (int i = 0; i < 4; i++) {
+                if (deviceId == motorList[i]->getID()) {
+                    motorList[i]->parseStatus(apiId, rxFrame.data);
+                    break;
+                }
+            }
+        } else if ((apiId & 0x300) == 0x300) {  // Parameter
+            printREVParameter(rxFrame);
+#ifdef DEBUG
+            Serial.print("From frame: ");
+            printREVFrame(rxFrame);
+#endif
         }
     }
 
@@ -437,13 +556,12 @@ void loop() {
     //      /////////    //            //    //////////      //
     //                                                       //
     //-------------------------------------------------------//
-    try {
     if (Serial.available()) {
         String input = Serial.readStringUntil('\n');
 
         input.trim();                   // Remove preceding and trailing whitespace
         std::vector<String> args = {};  // Initialize empty vector to hold separated arguments
-        parseInput(input, args);   // Separate `input` by commas and place into args vector
+        parseInput(input, args);        // Separate `input` by commas and place into args vector
         args[0].toLowerCase();          // Make command case-insensitive
         String command = args[0];       // To make processing code more readable
 
@@ -452,7 +570,7 @@ void loop() {
         //--------//
         //  Misc  //
         //--------//
-        /**/ if (command == "ping") {
+        if (command == "ping") {
             Serial.println("pong");
         }
 
@@ -487,33 +605,26 @@ void loop() {
         //  Sensors  //
         //-----------//
 
-        else if (args[0] == "data") // Send data out
-        {
-
-            if(args[1] == "sendGPS") // data,sendGPS
-            {
+        else if (args[0] == "data") {
+            if (args[1] == "sendGPS") {
                 outputGPS();
             }
 
-            else if(args[1] == "sendIMU") // data,sendIMU
-            {
+            else if (args[1] == "sendIMU") {
                 Serial.println(outputBno());
             }
 
-            else if(args[1] == "sendBMP") // data,sendBMP
-            {
+            else if (args[1] == "sendBMP") {
                 Serial.println(outputBmp());
             }
 
-            else if(args[1] == "everything") // data,everything
-            { 
-                //Serial.println(outputGPS());
+            else if (args[1] == "everything") {
+                // Serial.println(outputGPS());
                 Serial.println(outputBno());
                 Serial.println(outputBmp());
             }
-            
-            else if(args[1] == "getOrientation") // data,getOrientation
-            { 
+
+            else if (args[1] == "getOrientation") {
                 Serial.printf("orientation,%f\n", getBNOOrient(bno));
             }
         }
@@ -522,119 +633,14 @@ void loop() {
         //  Physical  //
         //------------//
 
-        else if (args[0] == "ctrl" || args[0] == "ctrl_send" || args[0] == "brake") // Is looking for a command that looks like "ctrl,LeftY-Axis,RightY-Axis" where LY,RY are >-1 and <1
-        {
-            lastCtrlCmd = millis();
-            Serial1.println(input);
-        }
-
-        else if (args[0] == "joystick_ctrl")  // Takes X and Y position of controller's joystick
-        {
-            lastCtrlCmd = millis();
-            if (checkArgs(args, 2))
-            {
-                #define JOYSTICK_MAX 1.0
-
-                // Inputs
-                float joy_x = args[1].toFloat();
-                float joy_y = args[2].toFloat();
-                // Outputs
-                float left_motor_duty;
-                float right_motor_duty;
-
-                // Speed rover will drive is distance of joystick away from center
-                float driveSpeed = map_d(sqrt(joy_x*joy_x + joy_y*joy_y), 0, JOYSTICK_MAX, 0, 1);
-
-                // Use positive joy_x by default
-
-                left_motor_duty = joy_y >= 0 ? driveSpeed : -1 * driveSpeed;  // Positive forwards, negative backwards
-                right_motor_duty = map_d(joy_y, -JOYSTICK_MAX, JOYSTICK_MAX, -1 * driveSpeed, driveSpeed);
-
-                // Flip if joy_x negative
-                if (joy_x < 0) {
-                    const float temp = left_motor_duty;
-                    left_motor_duty = right_motor_duty;
-                    right_motor_duty = temp;
-                }
-
-                // Send to motor mcu
-                Serial1.print("ctrl,");
-                Serial1.print(left_motor_duty);
-                Serial1.print(",");
-                Serial1.println(right_motor_duty);
-            }
-        }
-
-        else if (args[0] == "auto") // Commands for autonomy
-        {
-
-            lastCtrlCmd = millis();
-            if(command != prevCommand)
-            {
-
-                if(args[1] == "turningTo") // auto,turningTo
-                {
-
-                    bool success = false;
-
-                    success = autoTurn(args[2].toFloat(),args[3].toFloat());
-                    if(success)
-                    {
-                        Serial.println("turningTo,success");
-                    }
-                    else
-                    {
-                        Serial.println("turningTo,fail");
-                    }
-
-                }
-
-            }
-            else
-            {
-                //pass if command if control command is same as previous
+        // set LED strip color format: led_set,r,b,g
+        else if (args[0] == "led_set") {
+            int led_rgb[3] = {0, 0, 0};
+            for (int i = 0; i < 3; i++) {
+                led_rgb[i] = args.at(i + 1).toInt();
             }
 
-        }
-
-        else if (args[0] == "led_set") //set LED strip color format: led_set,r,b,g
-        {
-            for(int i = 0; i < 3; i++)
-            {
-                led_rbg[i] = args.at(i+1).toInt();
-            }
-            
-            setLED(led_rbg[0], led_rbg[1], led_rbg[2]);
-        }
-    }
-    } catch(std::out_of_range& e) {
-        Serial.println("Error: Out of range (not enough arguments provided)");
-        Serial.println(e.what());
-    }
-
-    // Relay data from the motor controller back over USB
-    if (COMMS_UART.available())
-    {
-        String input = COMMS_UART.readStringUntil('\n');
-        input.trim();
-        std::vector<String> args = {};  // Initialize empty vector to hold separated arguments
-        parseInput(input, args);        // Separate `input` by commas and place into args vector
-
-        if (checkArgs(args, 4) && args[0] == "motorpower") {
-            vicCAN.send(CMD_REVMOTOR_FEEDBACK, args[1].toInt(), args[2].toInt(), args[3].toInt(), args[4].toInt());
-        }
-
-        else if (checkArgs(args, 3) && args[0] == "motormotion") {
-            vicCAN.send(58, args[1].toInt(), args[2].toInt(), args[3].toInt());
-        }
-
-        else if (args[0] == "can_relay_fromvic") {
-            Serial.println(input);
-        }
-
-        else {
-            Serial.print("Motor MCU: ");
-            Serial.println(input);
+            setLED(led_rgb[0], led_rgb[1], led_rgb[2]);
         }
     }
 }
@@ -658,24 +664,31 @@ void loop() {
 //----------------------------------------------------//
 
 
+// Bypasses the acceleration to make the rover stop
+// Should only be used for autonomy, but it could probably be used elsewhere
+void Stop() {
+    for (int i = 0; i < 4; i++) {
+        motorList[i]->stop();
+    }
+}
 
 // Prints the output of the BNO in one line
-String outputBno()
-{
+String outputBno() {
     float bnoData2[7];
-    pullBNOData(bno,bnoData2);
+    pullBNOData(bno, bnoData2);
     String output;
 
-    output = "bno," + String(bnoData2[0]) + ',' + String(bnoData2[1]) + ',' + String(bnoData2[2]) + ',' + String(bnoData2[3]) + ',' + String(bnoData2[4]) + ',' + String(bnoData2[5]) + ',' + String(bnoData2[6]);
+    output = "bno," + String(bnoData2[0]) + ',' + String(bnoData2[1]) + ',' + String(bnoData2[2]) + ',' +
+             String(bnoData2[3]) + ',' + String(bnoData2[4]) + ',' + String(bnoData2[5]) + ',' +
+             String(bnoData2[6]);
 
-    //sprintf(output,"%f,%f,%f,%f,%f,%f,%f",bnoData2[0],bnoData2[1],bnoData2[2],bnoData2[3],bnoData2[4],bnoData2[5],bnoData2[6]);
-    
+    // sprintf(output,"%f,%f,%f,%f,%f,%f,%f",bnoData2[0],bnoData2[1],bnoData2[2],bnoData2[3],bnoData2[4],bnoData2[5],bnoData2[6]);
+
     return output;
 }
 
 // Prints the output of the GPS in one line
-String outputGPS()
-{
+String outputGPS() {
     String output = "null";
     double gpsData[3];
     getPosition(myGNSS, gpsData);
@@ -686,104 +699,42 @@ String outputGPS()
     // Serial.println();
 
     output = "gps," + String(gpsData[0]) + ',' + String(gpsData[1]) + '\n';
-    
+
     return output;
 }
 
 // Prints the output of the BMP in one line
-String outputBmp()
-{
+String outputBmp() {
     float bmpData[3];
     pullBMPData(bmp, bmpData);
     String output;
 
     output = "bmp," + String(bmpData[0]) + ',' + String(bmpData[1]) + ',' + String(bmpData[2]);
 
-    //sprintf(output, "%f,%f,%f",bmpData[0],bmpData[1],bmpData[2]);
+    // sprintf(output, "%f,%f,%f",bmpData[0],bmpData[1],bmpData[2]);
 
     return output;
 }
 
-// Specify where the rover should turn
-// and how long it should take before
-// the rover decides that it has failed
-// to turn
-bool autoTurn(int time, float target_direction)
-{
-
-    int startTime = millis(); 
-    unsigned long expectedTime;
-    expectedTime = time;
-    
-    float current_direction = getBNOOrient(bno);
-    bool turningRight = findRotationDirection(current_direction, target_direction);
-
-    Serial.printf("StartTime: %d, Expected: %d",(int)startTime, (int)expectedTime);
-
-
-    while (millis() - startTime < expectedTime)
-    {
-
-        current_direction = getBNOOrient(bno);
-        if (!((current_direction < target_direction + 2) && (current_direction > target_direction - 2)))
-        {
-        
-            turningRight = findRotationDirection(current_direction, target_direction);
-
-            Serial.print("Turning to: ");
-            Serial.println(target_direction);
-            Serial.print("Currently at: ");
-            Serial.println(getBNOOrient(bno));
-
-            if (turningRight)
-            {
-                Serial1.println("auto,TurnCW");
-            }
-            else
-            {
-                Serial1.println("auto,TurnCCW");
-            }
-
-        }
-        else
-        {
-            Serial1.println("auto,stop");
-            return true;
-        }
-
-    }
-
-    Serial1.println("auto,stop");
-    return false;
-}
-
 
 // Finds out which direction the rover should turn
-int findRotationDirection(float current_direction, float target_direction)
-{
+int findRotationDirection(float current_direction, float target_direction) {
     int cw_dist = target_direction - current_direction + 360;
     cw_dist %= 360;
-    int ccw_dist = current_direction - target_direction + 360; 
+    int ccw_dist = current_direction - target_direction + 360;
     ccw_dist %= 360;
 
-    if (cw_dist <= ccw_dist)
-    {
-        return 1;//Rotate CW if distance is 180 or less
+    if (cw_dist <= ccw_dist) {
+        return 1;  // Rotate CW if distance is 180 or less
+    } else {
+        return 0;  // Rotate CCW if distance is greater than 180
     }
-    else
-    {
-        return 0;//Rotate CCW if distance is greater than 180
-    }
-
 }
 
-void setLED(int r_val, int b_val, int g_val)
-{
-    for(int i = 0; i < NUM_LEDS; ++i)
-    {
+void setLED(int r_val, int b_val, int g_val) {
+    for (int i = 0; i < NUM_LEDS; ++i) {
         leds[i] = CRGB(r_val, b_val, g_val);
         FastLED.show();
-        //delay(10);
     }
 }
 
