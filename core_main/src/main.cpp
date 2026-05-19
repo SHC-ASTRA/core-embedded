@@ -340,10 +340,10 @@ void loop() {
     if (millis() - lastTurn > 100 && turningToStatus.enabled) {
         lastTurn = millis();
 
-        // TODO: fix for motor on main
+        // NOTE: only used by legacy Autonomy
         if (millis() > turningToStatus.timeoutStamp) {
             turningToStatus.enabled = false;
-            COMMS_UART.println("set_duty,0,0");
+            Stop();
         } else {
             // Get heading measurement from IMU
             sensors_event_t orientationData;
@@ -357,11 +357,19 @@ void loop() {
 
             if (abs(error) < 10) {
                 turningToStatus.enabled = false;
-                COMMS_UART.println("set_duty,0,0");
+                Stop();
             } else if (error > 0) {
-                COMMS_UART.println("set_duty,0.75,-0.75");
+                motorList[0]->sendDuty(0.75);
+                motorList[1]->sendDuty(0.75);
+
+                motorList[2]->sendDuty(-0.75);
+                motorList[3]->sendDuty(-0.75);
             } else {
-                COMMS_UART.println("set_duty,-0.75,0.75");
+                motorList[0]->sendDuty(-0.75);
+                motorList[1]->sendDuty(-0.75);
+
+                motorList[2]->sendDuty(0.75);
+                motorList[3]->sendDuty(0.75);
             }
         }
     }
