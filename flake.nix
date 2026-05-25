@@ -1,5 +1,5 @@
 {
-  description = "Biosensor embedded dev shell";
+  description = "Core embedded dev shell";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
@@ -29,7 +29,7 @@
       in
       {
         devShells.default = pkgs.mkShell {
-          name = "biosensor-embedded";
+          name = "core-embedded";
           packages = with pkgs; [
             platformio
           ];
