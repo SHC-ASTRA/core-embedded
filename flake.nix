@@ -35,11 +35,13 @@
           ];
 
           shellHook = ''
-	    if [[ ! -f core_main/compile_commands.json ]]; then
-	      export COMPILATIONDB_INCLUDE_TOOLCHAIN=True
-	      pio run -d core_main -t compiledb
-	      unset COMPILATIONDB_INCLUDE_TOOLCHAIN
-	    fi
+            for d in $(find . -mindepth 2 -maxdepth 2 -name "platformio.ini" -printf '%h\n'); do
+              if [[ ! -f "$d"/compile_commands.json ]]; then
+                export COMPILATIONDB_INCLUDE_TOOLCHAIN=True
+                pio run -d "$d" -t compiledb
+                unset COMPILATIONDB_INCLUDE_TOOLCHAIN
+              fi
+            done
 
             echo "core-embedded dev shell"
             echo "  pio run -d core_main -t main_prod - build production"
