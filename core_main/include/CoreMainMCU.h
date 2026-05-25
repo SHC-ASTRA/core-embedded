@@ -12,7 +12,7 @@
 //   DOIT ESP32 Devkit V1 (URC 2025, Core V2)
 //------------------------------------------------------------------------------------------------//
 
-#warning "Pins not added because this PCB is not going to be used."
+#    warning "Pins not added because this PCB is not going to be used."
 
 #elif defined(ARDUINO_ADAFRUIT_FEATHER_ESP32_V2)
 
@@ -21,25 +21,25 @@
 //------------------------------------------------------------------------------------------------//
 
 // CAN
-#define CAN_TX 13
-#define CAN_RX 12
+#    define CAN_TX 13
+#    define CAN_RX 12
 
 // Voltage Dividers
-#define PIN_VDIV_5V 33
-#define PIN_VDIV_BATT 15
-#define PIN_VDIV_12V 32
-#define PIN_VDIV_3V3 14
+#    define PIN_VDIV_5V 33
+#    define PIN_VDIV_BATT 15
+#    define PIN_VDIV_12V 32
+#    define PIN_VDIV_3V3 14
 
 // LED Strip
-#define PIN_LED_STRIP 4
+#    define PIN_LED_STRIP 4
 
-#define MOTOR_AMOUNT 4
+#    define MOTOR_AMOUNT 4
 
-#ifdef FLIPSKY
-#define FLIPSKY_UART_NUM 2
-#define FLIPSKY_BAUD 115200
-#define PIN_FLIPSKY_TX 27
-#define PIN_FLIPSKY_RX 39
-#endif
+#    ifdef FLIPSKY
+#        define FLIPSKY_UART_NUM 2
+#        define FLIPSKY_BAUD 115200
+#        define PIN_FLIPSKY_TX 27
+#        define PIN_FLIPSKY_RX 39
+#    endif
 
 #endif

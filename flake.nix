@@ -44,8 +44,8 @@
             done
 
             echo "core-embedded dev shell"
-            echo "  pio run -d core_main -t main_prod - build production"
-            echo "  pio run -d core_main -t main_dev  - build development"
+            echo "  pio run -d core_main -e core_main_prod -t upload"
+            echo "  pio run -d core_main -e core_main_dev -t upload"
           '';
         };
 
