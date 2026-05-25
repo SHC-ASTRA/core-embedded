@@ -35,6 +35,12 @@
           ];
 
           shellHook = ''
+	    if [[ ! -f core_main/compile_commands.json ]]; then
+	      export COMPILATIONDB_INCLUDE_TOOLCHAIN=True
+	      pio run -d core_main -t compiledb
+	      unset COMPILATIONDB_INCLUDE_TOOLCHAIN
+	    fi
+
             echo "core-embedded dev shell"
             echo "  pio run -d core_main -t main_prod - build production"
             echo "  pio run -d core_main -t main_dev  - build development"
