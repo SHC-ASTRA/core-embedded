@@ -42,6 +42,8 @@ void FlipskyMotor::sendSpeed(float val) {
     // val is at the output shaft; VESC setRPM expects motor-side RPM, so scale by gearbox.
     float rpm = inverted ? -val : val;
     status1.sensorVelocity = rpm;
+    targetDuty = 0.0f;
+    currentDuty = 0.0f;
     // Zero RPM via the speed PID would actively brake; instead coast by zeroing motor current.
     if (rpm == 0.0f) {
         dispatch(CmdMode::CURRENT, 0.0f);
@@ -51,25 +53,42 @@ void FlipskyMotor::sendSpeed(float val) {
 }
 
 void FlipskyMotor::sendDuty(float val) {
-    float duty = inverted ? -val : val;
-    if (duty == 0.0f) {
+    // Sets the target only & accelerate() ramps currentDuty toward it
+    targetDuty = inverted ? -val : val;
+    // instantly coast
+    if (targetDuty == 0.0f) {
+        currentDuty = 0.0f;
         dispatch(CmdMode::CURRENT, 0.0f);
-    } else {
-        dispatch(CmdMode::DUTY, duty);
     }
 }
 
 void FlipskyMotor::stop() {
     status1.sensorVelocity = 0;
+    targetDuty = 0.0f;
+    currentDuty = 0.0f;
     dispatch(CmdMode::CURRENT, 0.0f);
 }
 
 void FlipskyMotor::setBrake(bool brake) {
+    targetDuty = 0.0f;
+    currentDuty = 0.0f;
     dispatch(brake ? CmdMode::BRAKE : CmdMode::CURRENT, brake ? BRAKE_CURRENT_A : 0.0f);
 }
 
 void FlipskyMotor::accelerate() {
-    // send the last setpoint periodically so safety dont make it boom
+    // Ramp duty cycle &then also use heartbeat
+    if (targetDuty != currentDuty) {
+        float diff = targetDuty - currentDuty;
+        if (fabs(diff) <= DUTY_ACCEL) {
+            currentDuty = targetDuty;
+        } else {
+            currentDuty += (diff > 0 ? DUTY_ACCEL : -DUTY_ACCEL);
+        }
+        dispatch(CmdMode::DUTY, currentDuty);
+        return;
+    }
+
+    // Heartbeat
     if (lastCmdMode == CmdMode::NONE)
         return;
     if (millis() - lastSendTime < RESEND_INTERVAL_MS)
