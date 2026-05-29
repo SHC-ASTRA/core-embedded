@@ -9,8 +9,10 @@ extern HardwareSerial flipskySerial;
 extern VescUart flipskyUart;
 
 class FlipskyMotor {
-    uint8_t canId;
+    uint8_t revId;
+    uint8_t vescId;
     bool inverted;
+    int gearBox;
 
    public:
     struct Status1 {
@@ -26,10 +28,14 @@ class FlipskyMotor {
         float sensorPosition = 0;
     } status2;
 
-    FlipskyMotor(uint8_t setCanId, bool setInverted);
+    FlipskyMotor(uint8_t setRevId, uint8_t setVescId, bool setInverted, int setGearBox = 1);
 
     inline int getID() const {
-        return canId;
+        return revId;
+    }
+
+    inline int getGearBox() const {
+        return gearBox;
     }
 
     void sendSpeed(float val);

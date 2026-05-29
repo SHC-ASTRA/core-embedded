@@ -55,21 +55,20 @@ using Motor = AstraMotors;
 // Testbed: 64
 // #define WHEEL_GEARBOX 64
 
+// Canonical motor IDs used over CAN (REV is the source of truth — same IDs
+// regardless of motor controller backend)
+#define MOTOR_ID_FL 2  // front left wheel
+#define MOTOR_ID_FR 1  // front right wheel
+#define MOTOR_ID_BL 4  // back left wheel
+#define MOTOR_ID_BR 3  // back right wheel
+#define MOTOR_AMOUNT 4
+
 #ifdef FLIPSKY
-// Flipsky Motor IDs
-// id 0 is the local device
-#    define MOTOR_ID_FL 96  // Flipsky motor ID for front left wheel
-#    define MOTOR_ID_FR 120  // Flipsky motor ID for front right wheel
-#    define MOTOR_ID_BL 0  // Flipsky motor ID for back left wheel
-#    define MOTOR_ID_BR 89  // Flipsky motor ID for back right wheel
-#    define MOTOR_AMOUNT 4
-#else
-// REV Motor IDs
-#    define MOTOR_ID_FL 2  // REV motor ID for front left wheel
-#    define MOTOR_ID_FR 1  // REV motor ID for front right wheel
-#    define MOTOR_ID_BL 4  // REV motor ID for back left wheel
-#    define MOTOR_ID_BR 3  // REV motor ID for back right wheel
-#    define MOTOR_AMOUNT 4
+// Internal VESC CAN IDs (id 0 is the local device) — remapped from MOTOR_ID_*
+#    define VESC_ID_FL 96
+#    define VESC_ID_FR 120
+#    define VESC_ID_BL 0
+#    define VESC_ID_BR 89
 #endif
 
 //---------------------//
@@ -89,11 +88,11 @@ SFE_UBLOX_GNSS myGNSS;
 Adafruit_BNO055 bno;
 
 #ifdef FLIPSKY
-// FlipskyMotor(uint8_t vescCanId, bool setInverted)
-Motor MotorFL(MOTOR_ID_FL, false);  // Front Left
-Motor MotorBL(MOTOR_ID_BL, false);  // Back Left
-Motor MotorFR(MOTOR_ID_FR, false);   // Front Right
-Motor MotorBR(MOTOR_ID_BR, false);   // Back Right
+// FlipskyMotor(uint8_t revId, uint8_t vescCanId, bool setInverted, int setGearBox)
+Motor MotorFL(MOTOR_ID_FL, VESC_ID_FL, false, WHEEL_GEARBOX);  // Front Left
+Motor MotorBL(MOTOR_ID_BL, VESC_ID_BL, false, WHEEL_GEARBOX);  // Back Left
+Motor MotorFR(MOTOR_ID_FR, VESC_ID_FR, true, WHEEL_GEARBOX);  // Front Right
+Motor MotorBR(MOTOR_ID_BR, VESC_ID_BR, true, WHEEL_GEARBOX);  // Back Right
 #else
 // AstraMotors(int setMotorID, bool setInverted, int setGearBox)
 Motor MotorFL(MOTOR_ID_FL, false, WHEEL_GEARBOX);  // Front Left
