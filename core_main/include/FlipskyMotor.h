@@ -13,6 +13,21 @@ class FlipskyMotor {
     uint8_t vescId;
     bool inverted;
     int gearBox;
+    enum class CmdMode {
+        NONE,
+        RPM,
+        DUTY,
+        CURRENT,
+        BRAKE
+    };
+    CmdMode lastCmdMode = CmdMode::NONE;
+    float lastSentValue = 0.0f;
+    unsigned long lastSendTime = 0;
+    static constexpr unsigned long RESEND_INTERVAL_MS = 500;
+    static constexpr float BRAKE_CURRENT_A = 5.0f;
+
+    void dispatch(CmdMode mode, float value);
+    void transmit();
 
    public:
     struct Status1 {
@@ -39,16 +54,13 @@ class FlipskyMotor {
     }
 
     void sendSpeed(float val);
-    inline void sendDuty(float /*val*/) {
-    }
+    void sendDuty(float val);
     void stop();
 
-    inline void setBrake(bool) {
-    }
+    void setBrake(bool brake);
     inline void identify() {
     }
-    inline void accelerate() {
-    }
+    void accelerate();
     inline void setSlowStatusPeriods() {
     }
 

@@ -91,8 +91,8 @@ Adafruit_BNO055 bno;
 // FlipskyMotor(uint8_t revId, uint8_t vescCanId, bool setInverted, int setGearBox)
 Motor MotorFL(MOTOR_ID_FL, VESC_ID_FL, false, WHEEL_GEARBOX);  // Front Left
 Motor MotorBL(MOTOR_ID_BL, VESC_ID_BL, false, WHEEL_GEARBOX);  // Back Left
-Motor MotorFR(MOTOR_ID_FR, VESC_ID_FR, true, WHEEL_GEARBOX);  // Front Right
-Motor MotorBR(MOTOR_ID_BR, VESC_ID_BR, true, WHEEL_GEARBOX);  // Back Right
+Motor MotorFR(MOTOR_ID_FR, VESC_ID_FR, true, WHEEL_GEARBOX);   // Front Right
+Motor MotorBR(MOTOR_ID_BR, VESC_ID_BR, true, WHEEL_GEARBOX);   // Back Right
 #else
 // AstraMotors(int setMotorID, bool setInverted, int setGearBox)
 Motor MotorFL(MOTOR_ID_FL, false, WHEEL_GEARBOX);  // Front Left
