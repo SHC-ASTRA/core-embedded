@@ -300,7 +300,9 @@ void setup() {
     // Serial1 is for UART comms with VESC (flipsky)
     Serial1.begin(SERIAL_BAUD, SERIAL_8N1, SERIAL1_RX, SERIAL1_TX);
     flipskyUart.setSerialPort(&Serial1);
+#    ifdef DEBUG
     flipskyUart.setDebugPort(&Serial);
+#    endif
 #else
     // The sparkmaxes are probably ready by now right
     for (int i = 0; i < MOTOR_AMOUNT; i++) {
