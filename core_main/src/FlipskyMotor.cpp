@@ -4,7 +4,6 @@
 
 #    include "CoreMainMCU.h"
 
-HardwareSerial flipskySerial(FLIPSKY_UART_NUM);
 VescUart flipskyUart;
 
 FlipskyMotor::FlipskyMotor(uint8_t setCanId, bool setInverted) : canId(setCanId), inverted(setInverted) {

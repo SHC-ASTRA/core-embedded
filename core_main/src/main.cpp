@@ -19,6 +19,8 @@
 #include "AstraSensors.h"
 #include "AstraVicCAN.h"
 #include "CoreMainMCU.h"
+#include "HardwareSerial.h"
+#include "esp32-hal.h"
 #ifdef FLIPSKY
 #    include <VescUart.h>
 
@@ -53,12 +55,22 @@ using Motor = AstraMotors;
 // Testbed: 64
 // #define WHEEL_GEARBOX 64
 
+#ifdef FLIPSKY
+// Flipsky Motor IDs
+// id 0 is the local device
+#    define MOTOR_ID_FL 96  // Flipsky motor ID for front left wheel
+#    define MOTOR_ID_FR 120  // Flipsky motor ID for front right wheel
+#    define MOTOR_ID_BL 0  // Flipsky motor ID for back left wheel
+#    define MOTOR_ID_BR 89  // Flipsky motor ID for back right wheel
+#    define MOTOR_AMOUNT 4
+#else
 // REV Motor IDs
-#define MOTOR_ID_FL 2  // REV motor ID for front left wheel
-#define MOTOR_ID_FR 1  // REV motor ID for front right wheel
-#define MOTOR_ID_BL 4  // REV motor ID for back left wheel
-#define MOTOR_ID_BR 3  // REV motor ID for back right wheel
-#define MOTOR_AMOUNT 4
+#    define MOTOR_ID_FL 2  // REV motor ID for front left wheel
+#    define MOTOR_ID_FR 1  // REV motor ID for front right wheel
+#    define MOTOR_ID_BL 4  // REV motor ID for back left wheel
+#    define MOTOR_ID_BR 3  // REV motor ID for back right wheel
+#    define MOTOR_AMOUNT 4
+#endif
 
 //---------------------//
 //  Component classes  //
@@ -80,8 +92,8 @@ Adafruit_BNO055 bno;
 // FlipskyMotor(uint8_t vescCanId, bool setInverted)
 Motor MotorFL(MOTOR_ID_FL, false);  // Front Left
 Motor MotorBL(MOTOR_ID_BL, false);  // Back Left
-Motor MotorFR(MOTOR_ID_FR, true);   // Front Right
-Motor MotorBR(MOTOR_ID_BR, true);   // Back Right
+Motor MotorFR(MOTOR_ID_FR, false);   // Front Right
+Motor MotorBR(MOTOR_ID_BR, false);   // Back Right
 #else
 // AstraMotors(int setMotorID, bool setInverted, int setGearBox)
 Motor MotorFL(MOTOR_ID_FL, false, WHEEL_GEARBOX);  // Front Left
@@ -283,8 +295,9 @@ void setup() {
     }
 
 #ifdef FLIPSKY
-    flipskySerial.begin(FLIPSKY_BAUD, SERIAL_8N1, PIN_FLIPSKY_RX, PIN_FLIPSKY_TX);
-    flipskyUart.setSerialPort(&flipskySerial);
+    // Serial1 is for UART comms with VESC (flipsky)
+    Serial1.begin(SERIAL_BAUD, SERIAL_8N1, SERIAL1_RX, SERIAL1_TX);
+    flipskyUart.setSerialPort(&Serial1);
     flipskyUart.setDebugPort(&Serial);
 #else
     // The sparkmaxes are probably ready by now right

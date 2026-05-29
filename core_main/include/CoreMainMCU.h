@@ -24,6 +24,10 @@
 #    define CAN_TX 13
 #    define CAN_RX 12
 
+// Secondary UART
+#    define SERIAL1_TX 8
+#    define SERIAL1_RX 7
+
 // Voltage Dividers
 #    define PIN_VDIV_5V 33
 #    define PIN_VDIV_BATT 15
