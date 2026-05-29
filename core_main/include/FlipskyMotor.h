@@ -26,12 +26,6 @@ class FlipskyMotor {
     static constexpr unsigned long RESEND_INTERVAL_MS = 500;
     static constexpr float BRAKE_CURRENT_A = 5.0f;
 
-    // Duty cycle ramping
-    float targetDuty = 0.0f;
-    float currentDuty = 0.0f;
-    // 0.05 reaches full duty in about a second
-    static constexpr float DUTY_ACCEL = 0.05f;
-
     void dispatch(CmdMode mode, float value);
     void transmit();
 
