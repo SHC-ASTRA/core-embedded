@@ -26,12 +26,25 @@
             nixfmt.enable = true;
           };
         };
+
+        default_target = "core_main_prod";
+
+        build = pkgs.writeShellScriptBin "build" ''
+          root=$(git rev-parse --show-toplevel)
+          pio run -d "$root/core_main" -e "''${1:-${default_target}}"
+        '';
+        upload = pkgs.writeShellScriptBin "upload" ''
+          root=$(git rev-parse --show-toplevel)
+          pio run -d "$root/core_main" -e "''${1:-${default_target}}" -t upload
+        '';
       in
       {
         devShells.default = pkgs.mkShell {
           name = "core-embedded";
           packages = with pkgs; [
             platformio
+            build
+            upload
           ];
 
           shellHook = ''
@@ -44,8 +57,8 @@
             done
 
             echo "core-embedded dev shell"
-            echo "  pio run -d core_main -e core_main_prod -t upload"
-            echo "  pio run -d core_main -e core_main_dev -t upload"
+            echo "  build [target]  - build (default target: ${default_target})"
+            echo "  upload [target] - build & upload (default target: ${default_target})"
           '';
         };
 
