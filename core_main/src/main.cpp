@@ -58,8 +58,7 @@ using Motor = AstraMotors;
 // Testbed: 64
 // #define WHEEL_GEARBOX 64
 
-// Canonical motor IDs used over CAN (REV is the source of truth — same IDs
-// regardless of motor controller backend)
+// Canonical motor IDs used over CAN (REV is the source of truth)
 #define MOTOR_ID_FL 2  // front left wheel
 #define MOTOR_ID_FR 1  // front right wheel
 #define MOTOR_ID_BL 4  // back left wheel
@@ -67,10 +66,10 @@ using Motor = AstraMotors;
 #define MOTOR_AMOUNT 4
 
 #ifdef FLIPSKY
-// Internal VESC CAN IDs (id 0 is the local device) — remapped from MOTOR_ID_*
-#    define VESC_ID_FL 96
+// Internal VESC CAN IDs (id 0 is the local device) remapped from MOTOR_ID_*
+#    define VESC_ID_FL 0
 #    define VESC_ID_FR 120
-#    define VESC_ID_BL 0
+#    define VESC_ID_BL 96
 #    define VESC_ID_BR 89
 #endif
 
