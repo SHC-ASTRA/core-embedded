@@ -2,6 +2,7 @@
  * @file Main.cpp
  * @author David Sharpe (ds0196@uah.edu)
  * @author Charles Marmann (cmm0077@uah.edu)
+ * @author Riley McLain (rjm0037@uah.edu)
  * @brief Core Embedded Main MCU
  *
  */
