@@ -298,7 +298,7 @@ void setup() {
 
 #ifdef FLIPSKY
     // Serial1 is for UART comms with VESC (flipsky)
-    Serial1.begin(SERIAL_BAUD, SERIAL_8N1, SERIAL1_RX, SERIAL1_TX);
+    Serial1.begin(SERIAL_BAUD);
     flipskyUart.setSerialPort(&Serial1);
 #    ifdef DEBUG
     flipskyUart.setDebugPort(&Serial);
