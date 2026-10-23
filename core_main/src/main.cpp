@@ -342,15 +342,14 @@ void loop() {
     // Accelerate motors; update the speed for all motors
     if (millis() - lastAccel >= 50) {
         lastAccel = millis();
-
-        // if we haven't heard from upstream in a while, coast
-        if (lastCtrlCmd != 0 && millis() - lastCtrlCmd > HOST_CMD_TIMEOUT_MS) {
-            Stop();
-        }
-
         for (int i = 0; i < 4; i++) {
             motorList[i]->accelerate();
         }
+    }
+
+    // Safety timeout
+    if (millis() - lastCtrlCmd > HOST_CMD_TIMEOUT_MS) {
+        Stop();
     }
 
     // Motor status debug printout
