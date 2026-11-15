@@ -2,6 +2,7 @@
  * @file Main.cpp
  * @author David Sharpe (ds0196@uah.edu)
  * @author Charles Marmann (cmm0077@uah.edu)
+ * @author Riley McLain (rjm0037@uah.edu)
  * @brief Core Embedded Main MCU
  *
  */
@@ -16,11 +17,20 @@
 #include <cmath>
 // Our own resources
 #include "AstraMisc.h"
-#include "AstraMotors.h"
 #include "AstraSensors.h"
 #include "AstraVicCAN.h"
 #include "CoreMainMCU.h"
+#include "HardwareSerial.h"
+#include "esp32-hal.h"
+#ifdef FLIPSKY
+#    include <VescUart.h>
 
+#    include "FlipskyMotor.h"
+using Motor = FlipskyMotor;
+#else
+#    include "AstraMotors.h"
+using Motor = AstraMotors;
+#endif
 
 //------------//
 //  Settings  //
@@ -28,6 +38,9 @@
 
 // Comment out to disable LED blinking
 #define BLINK
+
+// Stop the motors if no host control command has been received within this many ms.
+#define HOST_CMD_TIMEOUT_MS 500
 
 // strip 1: 1-40
 // strip 2: 41-82
@@ -46,13 +59,20 @@
 // Testbed: 64
 // #define WHEEL_GEARBOX 64
 
-// REV Motor IDs
-#define MOTOR_ID_FL 2  // REV motor ID for front left wheel
-#define MOTOR_ID_FR 1  // REV motor ID for front right wheel
-#define MOTOR_ID_BL 4  // REV motor ID for back left wheel
-#define MOTOR_ID_BR 3  // REV motor ID for back right wheel
+// Canonical motor IDs used over CAN (REV is the source of truth)
+#define MOTOR_ID_FL 2  // front left wheel
+#define MOTOR_ID_FR 1  // front right wheel
+#define MOTOR_ID_BL 4  // back left wheel
+#define MOTOR_ID_BR 3  // back right wheel
 #define MOTOR_AMOUNT 4
 
+#ifdef FLIPSKY
+// Internal VESC CAN IDs (id 0 is the local device) remapped from MOTOR_ID_*
+#    define VESC_ID_FL 0
+#    define VESC_ID_FR 120
+#    define VESC_ID_BL 96
+#    define VESC_ID_BR 89
+#endif
 
 //---------------------//
 //  Component classes  //
@@ -70,14 +90,21 @@ SFE_UBLOX_GNSS myGNSS;
 
 Adafruit_BNO055 bno;
 
+#ifdef FLIPSKY
+// FlipskyMotor(uint8_t revId, uint8_t vescCanId, bool setInverted, int setGearBox)
+Motor MotorFL(MOTOR_ID_FL, VESC_ID_FL, false, WHEEL_GEARBOX);  // Front Left
+Motor MotorBL(MOTOR_ID_BL, VESC_ID_BL, false, WHEEL_GEARBOX);  // Back Left
+Motor MotorFR(MOTOR_ID_FR, VESC_ID_FR, true, WHEEL_GEARBOX);   // Front Right
+Motor MotorBR(MOTOR_ID_BR, VESC_ID_BR, true, WHEEL_GEARBOX);   // Back Right
+#else
 // AstraMotors(int setMotorID, bool setInverted, int setGearBox)
-AstraMotors Motor1(MOTOR_ID_FL, false, WHEEL_GEARBOX);  // Front Left
-AstraMotors Motor2(MOTOR_ID_BL, false, WHEEL_GEARBOX);  // Back Left
-AstraMotors Motor3(MOTOR_ID_FR, true, WHEEL_GEARBOX);   // Front Right
-AstraMotors Motor4(MOTOR_ID_BR, true, WHEEL_GEARBOX);   // Back Right
+Motor MotorFL(MOTOR_ID_FL, false, WHEEL_GEARBOX);  // Front Left
+Motor MotorBL(MOTOR_ID_BL, false, WHEEL_GEARBOX);  // Back Left
+Motor MotorFR(MOTOR_ID_FR, true, WHEEL_GEARBOX);   // Front Right
+Motor MotorBR(MOTOR_ID_BR, true, WHEEL_GEARBOX);   // Back Right
+#endif
 
-AstraMotors* motorList[4] = {&Motor1, &Motor2, &Motor3, &Motor4};  // Left motors first, right motors second
-
+Motor *motorList[4] = {&MotorFL, &MotorBL, &MotorFR, &MotorBR};  // Left motors first, right motors second
 
 //----------//
 //  Timing  //
@@ -95,7 +122,6 @@ unsigned long lastMotorStatus = 0;
 unsigned long lastVersionSend = 0;
 long lastTurn = 0;
 
-
 //--------------//
 //  Prototypes  //
 //--------------//
@@ -108,19 +134,19 @@ void setLED(int r_val, int b_val, int g_val);
 float clamp_angle(float angle);
 void Stop();
 
-void loop2(void* pvParameters) {
+#ifndef FLIPSKY
+void loop2(void *pvParameters) {
     static uint8_t heartBeatNum = 1;
     while (true) {
         CAN_sendHeartbeat(heartBeatNum);
         heartBeatNum++;
-        if (heartBeatNum > 4)
-        {
+        if (heartBeatNum > 4) {
             heartBeatNum = 1;
         }
         delay(5);
     }
 }
-
+#endif
 
 //--------//
 //  Misc  //
@@ -131,7 +157,6 @@ struct TurningToStatus {
     int targetHeading = 0;  // Degrees
     long timeoutStamp = 0;  // Seconds
 } turningToStatus;
-
 
 //------------------------------------------------------------------------------------------------//
 //  Setup
@@ -156,7 +181,6 @@ void setup() {
 
     pinMode(LED_BUILTIN, OUTPUT);
 
-
     //-----------//
     //  MCU LED  //
     //-----------//
@@ -164,7 +188,6 @@ void setup() {
     digitalWrite(LED_BUILTIN, HIGH);
     delay(1000);
     digitalWrite(LED_BUILTIN, LOW);
-
 
     //------------------//
     //  Communications  //
@@ -176,7 +199,6 @@ void setup() {
         Serial.println("CAN bus started!");
     else
         Serial.println("CAN bus failed!");
-
 
     //-----------//
     //  Sensors  //
@@ -199,10 +221,10 @@ void setup() {
 
     initializeBMP(bmp);
 
-
     // Setup for GPS
 
-    myGNSS.setI2COutput(COM_TYPE_UBX);  // Set the I2C port to output UBX only (turn off NMEA noise)
+    myGNSS.setI2COutput(COM_TYPE_UBX);  // Set the I2C port to output UBX only
+                                        // (turn off NMEA noise)
     myGNSS.setNavigationFrequency(30);
     // Create storage for the time pulse parameters
     UBX_CFG_TP5_data_t timePulseParameters;
@@ -216,31 +238,33 @@ void setup() {
     Serial.println(timePulseParameters.version);
 
     timePulseParameters.tpIdx = 0;  // Select the TIMEPULSE pin
-    // timePulseParameters.tpIdx = 1; // Or we could select the TIMEPULSE2 pin instead, if the module has one
+    // timePulseParameters.tpIdx = 1; // Or we could select the TIMEPULSE2 pin
+    // instead, if the module has one
 
-    // We can configure the time pulse pin to produce a defined frequency or period
-    // Here is how to set the frequency:
+    // We can configure the time pulse pin to produce a defined frequency or
+    // period Here is how to set the frequency:
 
     // While the module is _locking_ to GNSS time, make it generate 2kHz
-    timePulseParameters.freqPeriod = 2000;  // Set the frequency/period to 2000Hz
-    timePulseParameters.pulseLenRatio =
-        0x55555555;  // Set the pulse ratio to 1/3 * 2^32 to produce 33:67 mark:space
+    timePulseParameters.freqPeriod = 2000;           // Set the frequency/period to 2000Hz
+    timePulseParameters.pulseLenRatio = 0x55555555;  // Set the pulse ratio to 1/3 * 2^32 to produce 33:67
+                                                     // mark:space
 
     // When the module is _locked_ to GNSS time, make it generate 1kHz
-    timePulseParameters.freqPeriodLock = 1000;  // Set the frequency/period to 1000Hz
-    timePulseParameters.pulseLenRatioLock =
-        0x80000000;  // Set the pulse ratio to 1/2 * 2^32 to produce 50:50 mark:space
+    timePulseParameters.freqPeriodLock = 1000;           // Set the frequency/period to 1000Hz
+    timePulseParameters.pulseLenRatioLock = 0x80000000;  // Set the pulse ratio to 1/2 * 2^32 to produce 50:50
+                                                         // mark:space
 
-    timePulseParameters.flags.bits.active =
-        1;  // Make sure the active flag is set to enable the time pulse. (Set to 0 to disable.)
-    timePulseParameters.flags.bits.lockedOtherSet =
-        1;  // Tell the module to use freqPeriod while locking and freqPeriodLock when locked to GNSS time
+    timePulseParameters.flags.bits.active = 1;  // Make sure the active flag is set to enable the time pulse.
+                                                // (Set to 0 to disable.)
+    timePulseParameters.flags.bits.lockedOtherSet = 1;  // Tell the module to use freqPeriod while locking and
+                                                        // freqPeriodLock when locked to GNSS time
     timePulseParameters.flags.bits.isFreq =
         1;  // Tell the module that we want to set the frequency (not the period)
     timePulseParameters.flags.bits.isLength =
-        0;  // Tell the module that pulseLenRatio is a ratio / duty cycle (* 2^-32) - not a length (in us)
-    timePulseParameters.flags.bits.polarity =
-        1;  // Tell the module that we want the rising edge at the top of second. (Set to 0 for falling edge.)
+        0;  // Tell the module that pulseLenRatio is a ratio / duty cycle (* 2^-32)
+            // - not a length (in us)
+    timePulseParameters.flags.bits.polarity = 1;  // Tell the module that we want the rising edge at the top
+                                                  // of second. (Set to 0 for falling edge.)
 
     // Now set the time pulse parameters
     if (myGNSS.setTimePulseParameters(&timePulseParameters) == false)
@@ -248,20 +272,20 @@ void setup() {
     else
         Serial.println(F("Success!"));
 
-
     //--------------------//
     //  Misc. Components  //
     //--------------------//
 
-    xTaskCreatePinnedToCore (
-        loop2,     // Function to implement the task
-        "loop2",   // Name of the task
-        1000,      // Stack size in bytes
-        NULL,      // Task input parameter
-        0,         // Priority of the task
-        NULL,      // Task handle.
-        0          // Core where the task should run
+#ifndef FLIPSKY
+    xTaskCreatePinnedToCore(loop2,    // Function to implement the task
+                            "loop2",  // Name of the task
+                            1000,     // Stack size in bytes
+                            NULL,     // Task input parameter
+                            0,        // Priority of the task
+                            NULL,     // Task handle.
+                            0         // Core where the task should run
     );
+#endif
 
     FastLED.addLeds<WS2812B, PIN_LED_STRIP, GRB>(leds, NUM_LEDS);
     FastLED.setBrightness(255);
@@ -272,12 +296,20 @@ void setup() {
         delay(10);
     }
 
+#ifdef FLIPSKY
+    // Serial1 is for UART comms with VESC (flipsky)
+    Serial1.begin(SERIAL_BAUD);
+    flipskyUart.setSerialPort(&Serial1);
+#    ifdef DEBUG
+    flipskyUart.setDebugPort(&Serial);
+#    endif
+#else
     // The sparkmaxes are probably ready by now right
     for (int i = 0; i < MOTOR_AMOUNT; i++) {
         motorList[i]->setSlowStatusPeriods();
     }
+#endif
 }
-
 
 //------------------------------------------------------------------------------------------------//
 //  Loop
@@ -315,11 +347,19 @@ void loop() {
         }
     }
 
+    // Safety timeout
+    if (millis() - lastCtrlCmd > HOST_CMD_TIMEOUT_MS) {
+        Stop();
+    }
+
     // Motor status debug printout
     if (millis() - lastMotorStatus > 500) {
         lastMotorStatus = millis();
 
         for (int i = 0; i < 4; i++) {
+#ifdef FLIPSKY
+            motorList[i]->pollStatus();
+#endif
             if (millis() - motorList[i]->status1.timestamp < 500) {
                 vicCAN.send(CMD_REVMOTOR_FEEDBACK, motorList[i]->getID(),
                             motorList[i]->status1.motorTemperature * 10,
@@ -419,7 +459,6 @@ void loop() {
         SEND_VERSION_INFO
     }
 
-
     //-------------//
     //  CAN Input  //
     //-------------//
@@ -452,9 +491,11 @@ void loop() {
         else if (commandID == CMD_REV_STOP) {
             Stop();
         } else if (commandID == CMD_REV_IDENTIFY) {
+#ifndef FLIPSKY
             if (canData.size() == 1) {
                 CAN_identifySparkMax(canData[0]);
             }
+#endif
         } else if (commandID == CMD_REV_IDLE_MODE) {
             if (canData.size() == 1 && (canData[0] == 0 || canData[0] == 1)) {
                 lastCtrlCmd = millis();
@@ -510,18 +551,20 @@ void loop() {
                 turningToStatus.timeoutStamp = millis() + canData[1] * 1000;
             }
         }
-    } else if (isREV) {  // REV Feedback
+    }
+#ifndef FLIPSKY
+    else if (isREV) {  // REV Feedback
         // Serial.print("Received CAN frame from REV device: ");
         // printREVFrame(rxFrame);
         uint8_t deviceId = rxFrame.identifier & 0x3F;        // [5:0]
         uint32_t apiId = (rxFrame.identifier >> 6) & 0x3FF;  // [15:6]
 
-#if defined(DEBUG_STATUS)
+#    if defined(DEBUG_STATUS)
         // Log message if it seems interesting
         if (apiId == 0x99 || (apiId & 0x60) == 0x60 || (apiId & 0x300) == 0x300) {
             printREVFrame(rxFrame);
         }
-#endif
+#    endif
 
         if ((apiId & 0x60) == 0x60) {  // Periodic status
             for (int i = 0; i < 4; i++) {
@@ -532,13 +575,13 @@ void loop() {
             }
         } else if ((apiId & 0x300) == 0x300) {  // Parameter
             printREVParameter(rxFrame);
-#ifdef DEBUG
+#    ifdef DEBUG
             Serial.print("From frame: ");
             printREVFrame(rxFrame);
-#endif
+#    endif
         }
     }
-
+#endif
 
     //------------------//
     //  UART/USB Input  //
@@ -561,9 +604,10 @@ void loop() {
 
         input.trim();                   // Remove preceding and trailing whitespace
         std::vector<String> args = {};  // Initialize empty vector to hold separated arguments
-        parseInput(input, args);        // Separate `input` by commas and place into args vector
-        args[0].toLowerCase();          // Make command case-insensitive
-        String command = args[0];       // To make processing code more readable
+        parseInput(input,
+                   args);          // Separate `input` by commas and place into args vector
+        args[0].toLowerCase();     // Make command case-insensitive
+        String command = args[0];  // To make processing code more readable
 
         String prevCommand;
 
@@ -645,7 +689,6 @@ void loop() {
     }
 }
 
-
 //------------------------------------------------------------------------------------------------//
 //  Function definitions
 //------------------------------------------------------------------------------------------------//
@@ -662,7 +705,6 @@ void loop() {
 //    //            //          //      //////////    //
 //                                                    //
 //----------------------------------------------------//
-
 
 // Bypasses the acceleration to make the rover stop
 // Should only be used for autonomy, but it could probably be used elsewhere
@@ -715,7 +757,6 @@ String outputBmp() {
 
     return output;
 }
-
 
 // Finds out which direction the rover should turn
 int findRotationDirection(float current_direction, float target_direction) {

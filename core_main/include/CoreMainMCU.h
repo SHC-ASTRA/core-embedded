@@ -6,7 +6,6 @@
  */
 #pragma once
 
-
 #if !defined(ARDUINO_ADAFRUIT_FEATHER_ESP32_V2)
 
 //------------------------------------------------------------------------------------------------//
@@ -14,7 +13,6 @@
 //------------------------------------------------------------------------------------------------//
 
 #    warning "Pins not added because this PCB is not going to be used."
-
 
 #elif defined(ARDUINO_ADAFRUIT_FEATHER_ESP32_V2)
 
@@ -25,6 +23,10 @@
 // CAN
 #    define CAN_TX 13
 #    define CAN_RX 12
+
+// Secondary UART
+#    define SERIAL1_TX 8
+#    define SERIAL1_RX 7
 
 // Voltage Dividers
 #    define PIN_VDIV_5V 33
@@ -37,5 +39,11 @@
 
 #    define MOTOR_AMOUNT 4
 
+#    ifdef FLIPSKY
+#        define FLIPSKY_UART_NUM 2
+#        define FLIPSKY_BAUD 115200
+#        define PIN_FLIPSKY_TX 27
+#        define PIN_FLIPSKY_RX 39
+#    endif
 
 #endif
